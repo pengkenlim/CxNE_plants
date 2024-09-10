@@ -75,19 +75,19 @@ class CxNE(nn.Module):
                 nn.init.constant_(conv.lin_l.bias, 0)
                 nn.init.constant_(conv.lin_r.bias, 0)
     def forward(self, x, edge_index, edge_weight):
-        x = self.encode(x)
+        x = self.encoder(x)
         for i, conv in enumerate(self.GAT_convs):
             if isinstance(conv, GATv2Conv):
                 x = conv(x, edge_index, edge_attr = edge_weight)
             if i < (len(self.GAT_convs) -1): # if not last layer
-                if self.GAT_kwargs["Batch_norm"]:
+                if self.GAT_kwargs["batch_norm"]:
                     x = self.GAT_act(BatchNorm(x.size(1))(x))
             else:# last layer
                 if self.GAT_kwargs["batch_norm_aft_last_layer"]:
                     x = BatchNorm(x.size(1))(x)
                 if self.GAT_kwargs["act_aft_last_layer"]:
                     x = self.GAT_act(x)
-        x= self.decode(x)
+        x= self.decoder(x)
         return x
     
 if __name__ == "__main__":
