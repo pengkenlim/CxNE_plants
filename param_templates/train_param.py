@@ -13,13 +13,13 @@ output_dir = '/path/to/output_dir/'     #-------------------------------------Pa
 checkpoint_interval = 10        #---------------------------------------------Interval to save model periodically
 checkpoint_threshold_loss = 0.35        #-------------------------------------Validation loss threshold to start saving model
 precision = "HALF"      #-----------------------------------------------------Half precision to reduce memory overhead. Options = ["FULL", "HALF"]
-epoch = 1_000       #---------------------------------------------------------Number of epochs to train
+num_epoch = 1_000       #-----------------------------------------------------Number of epochs to train
 optimizer_kwargs = {"lr": 0.01}     #-----------------------------------------Params for ADAM optimizer
 scheduler_kwargs = {"factor": 0.5,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #epochs = patience
                     "patience":10, 
                     "verbose":True}        
-datasampler_kwargs = {"num_steps": 6, #---------------------------------------Params for graphsaint random walk graph sampler to generate subgraphs.
-                      "batch_size" : 1_000, "walk_length" : 3 }
+datasampler_kwargs = {"num_steps": 30, #---------------------------------------Params for graphsaint random walk graph sampler to generate subgraphs.
+                      "batch_size" : 1_000, "walk_length" : 3, "sample_coverage":1 }
 
 #   model parameters
 encode_kwargs = {"dims": [480 , 360 , 240 ],        #-------------------------Params for encoder
