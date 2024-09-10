@@ -2,12 +2,12 @@
 
 #   System paramters
 num_workers = 12    #--------------------------------------------------------- No. workers for some CPU tasks
-mode = 'GPU'        #---------------------------------------------------------Options = ['CPU', 'GPU']
+mode = 'CPU'        #---------------------------------------------------------Options = ['CPU', 'GPU']
 
 #   dir/file paths
-input_graph_path = '/path/to/input_data.pkl'        #-------------------------Path to input data. Needs to be a pickled "torch_geometric.data.Data" object describing a homogeneous graph.
-coexp_adj_mat = '/path/to/coexp_adj_mat.pkl'      #-------------Path to zscore co-expression strengths between genes in the form of a pickled numpy array.
-output_dir = '/path/to/output_dir/'     #-------------------------------------Path to directory to output training statistics and save model state
+input_graph_path = '/mnt/md2/ken/CxNE_plants_data/taxid3702/adj_mat_zscore_5percent_data.pkl'        #-------------------------Path to input data. Needs to be a pickled "torch_geometric.data.Data" object describing a homogeneous graph.
+coexp_adj_mat = '/mnt/md2/ken/CxNE_plants_data/taxid3702/adj_mat_zscore.pkl'      #-------------Path to zscore co-expression strengths between genes in the form of a pickled numpy array.
+output_dir = '/mnt/md2/ken/CxNE_plants_data/test_outdir'     #-------------------------------------Path to directory to output training statistics and save model state
 
 #   training parameters
 checkpoint_interval = 10        #---------------------------------------------Interval to save model periodically
@@ -18,8 +18,8 @@ optimizer_kwargs = {"lr": 0.01}     #-----------------------------------------Pa
 scheduler_kwargs = {"factor": 0.5,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #epochs = patience
                     "patience":10, 
                     "verbose":True}        
-datasampler_kwargs = {"num_steps": 6, #---------------------------------------Params for graphsaint random walk graph sampler to generate subgraphs.
-                      "batch_size" : 1_000, "walk_length" : 3 }
+datasampler_kwargs = {"num_steps": 30, #---------------------------------------Params for graphsaint random walk graph sampler to generate subgraphs.
+                      "batch_size" : 1_000, "walk_length" : 2 }
 
 #   model parameters
 encode_kwargs = {"dims": [480 , 360 , 240 ],        #-------------------------Params for encoder
@@ -52,3 +52,8 @@ CxNE_kwargs = {"encode_kwargs": encode_kwargs,
               "decode_kwargs": decode_kwargs,
               "GAT_kwargs": GAT_kwargs}
 
+# asserssions to check if arguments of layers makes sense
+
+assert encode_kwargs["out_channels"] == GAT_kwargs["dims"][0]
+assert GAT_kwargs["out_channels"] == decode_kwargs["dims"][0]
+assert mode == "CPU" or mode == "GPU"
