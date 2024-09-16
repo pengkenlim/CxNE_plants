@@ -5,6 +5,10 @@ num_workers = 60    #--------------------------------------------------------- N
 mode = 'GPU'        #---------------------------------------------------------Options = ['CPU', 'GPU']
 precision = "HALF"      #-----------------------------------------------------Half precision to reduce memory overhead. Options = ["FULL", "HALF"]
 
+#   Download links (google drive only). Will only download if input_graph_path and coexp_adj_mat is missing. Put None to ignore
+input_graph_link = "https://drive.google.com/uc?id=1F3jdUgdKuCD1wrhcfmRTZh9FtDsALvc4"
+coexp_adj_mat_link = "https://drive.google.com/uc?id=1F4eEwFZYyBs9Kf4b-Pa4_Zh20HG01FLB"
+
 #   dir/file paths
 input_graph_path = '/home/ken/CxNE_plants/resources/taxid3702/adj_mat_zscore_5percent_data.pkl'        #-------------------------Path to input data. Needs to be a pickled "torch_geometric.data.Data" object describing a homogeneous graph.
 coexp_adj_mat = '/home/ken/CxNE_plants/resources/taxid3702/adj_mat_zscore.pkl'      #-------------Path to zscore co-expression strengths between genes in the form of a pickled numpy array.

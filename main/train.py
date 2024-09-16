@@ -13,6 +13,7 @@ if __name__ == "__main__":
 import argparse
 import shutil
 import pickle
+import gdown
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_geometric.loader import ClusterData, ClusterLoader
@@ -48,6 +49,15 @@ if __name__ == "__main__":
     train_param = others.parse_parameters(param_path)
     #train_param = others.parse_parameters("/home/ken/CxNE_plants/train_param_skynet_test.py")
     
+    #downloading data
+    if train_param.input_graph_link is not None and not os.path.exists(train_param.input_graph_path):
+        print(f"input graph not found. Downloading from {train_param.input_graph_link}...")
+        gdown(train_param.input_graph_link, train_param.input_graph_path)
+
+    if train_param.coexp_adj_mat_link is not None and not os.path.exists(train_param.coexp_adj_mat):
+        print(f"Co-expression adjacency matrix not found. Downloading from {train_param.coexp_adj_mat_link}...")
+        gdown(train_param.coexp_adj_mat_link, train_param.coexp_adj_mat)
+
     #create_outdir
     if not os.path.exists(train_param.output_dir):
         os.makedirs(train_param.output_dir)

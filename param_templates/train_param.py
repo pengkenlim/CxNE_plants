@@ -5,6 +5,8 @@ num_workers = 12    #--------------------------------------------------------- N
 mode = 'GPU'        #---------------------------------------------------------Options = ['CPU', 'GPU']
 
 #   dir/file paths
+input_graph_link = ""
+coexp_adj_mat_link = ""
 input_graph_path = '/path/to/input_data.pkl'        #-------------------------Path to input data. Needs to be a pickled "torch_geometric.data.Data" object describing a homogeneous graph.
 coexp_adj_mat = '/path/to/coexp_adj_mat.pkl'      #-------------Path to zscore co-expression strengths between genes in the form of a pickled numpy array.
 output_dir = '/path/to/output_dir/'     #-------------------------------------Path to directory to output training statistics and save model state
