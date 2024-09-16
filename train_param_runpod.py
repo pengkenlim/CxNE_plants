@@ -12,10 +12,10 @@ coexp_adj_mat_link = "https://drive.google.com/uc?id=1F4eEwFZYyBs9Kf4b-Pa4_Zh20H
 #   dir/file paths
 input_graph_path = '/workspace/data/taxid3702/adj_mat_zscore_5percent_data.pkl'        #-------------------------Path to input data. Needs to be a pickled "torch_geometric.data.Data" object describing a homogeneous graph.
 coexp_adj_mat = '/workspace/data/taxid3702/adj_mat_zscore.pkl'      #-------------Path to zscore co-expression strengths between genes in the form of a pickled numpy array.
-output_dir = '/workspace/data/model_8'     #-------------------------------------Path to directory to output training statistics and save model state
+output_dir = '/workspace/data/model_9'     #-------------------------------------Path to directory to output training statistics and save model state
 
 #   training parameters
-checkpoint_threshold_loss = 0.5        #-------------------------------------Validation loss threshold to start saving model
+checkpoint_threshold_loss = 0.6        #-------------------------------------Validation loss threshold to start saving model
 num_epoch = 1000       #---------------------------------------------------------Number of epochs to train
 optimizer_kwargs = {"lr": 0.01}     #-----------------------------------------Params for ADAM optimizer
 scheduler_kwargs = {"factor": 0.5,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #epochs = patience
@@ -26,21 +26,21 @@ clusterGCN_num_parts = 1000
 clusterGCN_parts_perbatch = 100
 
 # full batch inference parameters
-inference_interval = 25
+inference_interval = 10
 inference_replicates = 10
 save_inference_embeddings = True
 
 #   model parameters
-encode_kwargs = {"dims": [480 , 424, 368, 312],        #-------------------------Params for encoder
-                 "out_channels": 256,
+encode_kwargs = {"dims": [480 , 400, 300, 200,100],        #-------------------------Params for encoder
+                 "out_channels": 64,
                  "batch_norm": True,
                  "batch_norm_aft_last_layer": True,
                  "act_aft_last_layer": True,
                  "act" : "leaky_relu",
                  "act_kwargs": None}
 
-GAT_kwargs = {"dims": [256, 256],       #-------------------------------------Params for GAT
-              "out_channels": 256,
+GAT_kwargs = {"dims": [64, 64],       #-------------------------------------Params for GAT
+              "out_channels": 64,
               "batch_norm" : True,
               "batch_norm_aft_last_layer": True,
               "act_aft_last_layer": True,
@@ -49,7 +49,7 @@ GAT_kwargs = {"dims": [256, 256],       #-------------------------------------Pa
               "heads": 10,
               "act_kwargs" : None}
 
-decode_kwargs = {"dims": [256 , 128],       #---------------------------------Params for decoder
+decode_kwargs = {"dims": [64 , 64],       #---------------------------------Params for decoder
                  "out_channels": 64,
                  "batch_norm": True,
                  "batch_norm_aft_last_layer": False,

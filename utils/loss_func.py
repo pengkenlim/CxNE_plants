@@ -43,10 +43,12 @@ def subset_coexp_str(scaled_coexp_str_adj, node_indices, target_indices=None):
         return torch.tensor(scaled_coexp_str_adj[node_indices, :][:, target_indices]).float()
 
 
-def RMSE_dotprod_vs_coexp(embeddings, node_indices, coexp_str_adj):
+def RMSE_dotprod_vs_coexp(embeddings, node_indices, coexp_str_adj, CPU_device, GPU_device):
     """L = sqrt(Σ [(dot_prod(x_i, x_j) - w_ij)^2] / |E|)"""
     dot_prod_1D = extract_top_half(calculate_dot_product(embeddings))
+    node_indices = node_indices.to(CPU_device)
     subseted_coexp_str_1D = extract_top_half(subset_coexp_str(coexp_str_adj, node_indices))
+    subseted_coexp_str_1D = subseted_coexp_str_1D.to(GPU_device)
     squared_error = (dot_prod_1D - subseted_coexp_str_1D)**2
     RMSE = torch.sqrt(squared_error.nanmean())
     return RMSE

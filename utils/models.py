@@ -58,6 +58,7 @@ class CxNE(nn.Module):
         self.GAT_kwargs = GAT_kwargs
         self.GAT_convs = return_GAT_convs(**self.GAT_kwargs)
         self.GAT_act =   activation_resolver(self.GAT_kwargs["act"], **(self.GAT_kwargs["act_kwargs"] or {}))
+        self.GAT_batch_norm = BatchNorm(GAT_kwargs["dims"][0])
         self.decode_kwargs = decode_kwargs
         self.decoder = return_mlp(**self.decode_kwargs)
     def kaiming_innit(self):
@@ -85,10 +86,10 @@ class CxNE(nn.Module):
                 x = conv(x, edge_index, edge_attr = edge_weight)
             if i < (len(self.GAT_convs) -1): # if not last layer
                 if self.GAT_kwargs["batch_norm"]:
-                    x = self.GAT_act(BatchNorm(x.size(1))(x))
+                    x = self.GAT_act(self.GAT_batch_norm(x))
             else:# last layer
                 if self.GAT_kwargs["batch_norm_aft_last_layer"]:
-                    x = BatchNorm(x.size(1))(x)
+                    x = self.GAT_batch_norm(x)
                 if self.GAT_kwargs["act_aft_last_layer"]:
                     x = self.GAT_act(x)
         x= self.decoder(x)

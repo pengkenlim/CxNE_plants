@@ -18,24 +18,28 @@ import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_geometric.loader import ClusterData, ClusterLoader
 import numpy as np
-from torch.cuda.amp import autocast
+#from torch.cuda.amp import autocast
+from torch.amp import autocast, GradScaler
 
 from utils import others, models, loss_func
 
 
-@torch.no_grad()
+
 def infer():
     with torch.no_grad():
-        model.eval()
+        #model.eval()
         rearranged_out = torch.zeros(input_graph.x.size()[0], train_param.decode_kwargs["out_channels"])
-        for i in range(train_param.inference_replicates):
-            for batch_idx , batch in enumerate(loader):
-                out = model(batch.x.to(GPU_device),  
-                            batch.edge_index.to(GPU_device), 
-                            batch.edge_weight.to(GPU_device))
-                rearranged_out[batch.y] += out
+        with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16 if train_param.precision == "HALF" else torch.float32):
+            for i in range(train_param.inference_replicates):
+                for batch_idx , batch in enumerate(loader):
+                    batch = batch.to(GPU_device)
+                    out = model(batch.x,  
+                                batch.edge_index, 
+                                batch.edge_weight)
+                    out= out.to(CPU_device)
+                    rearranged_out[batch.y.to(CPU_device)] += out
         infer_out = rearranged_out / train_param.inference_replicates
-        return infer_out
+    return infer_out
 
 if __name__ == "__main__":
     parser= argparse.ArgumentParser(description="CxNE_plants/main/train.py. Train a Graph Neural Network-based Model to learn Gene co-expression embeddings (CxNE).")
@@ -63,6 +67,9 @@ if __name__ == "__main__":
         os.makedirs(train_param.output_dir)
     #copy training parameters
     shutil.copy(param_path, os.path.join(train_param.output_dir, "train_param.py"))
+
+    #clearing cache
+    torch.cuda.empty_cache()
 
     #initializing model
     print("Innitializing weights of model...\n")
@@ -123,16 +130,24 @@ if __name__ == "__main__":
 
 
 
-    model.train()
-    model.to(GPU_device)
-    scaler = torch.cuda.amp.GradScaler()
+    
+    model = model.to(GPU_device)
+    #scaler = torch.cuda.amp.GradScaler()
+    if train_param.mode == "CPU":
+        scaler = GradScaler('cpu')
+    elif train_param.mode == "GPU":
+        scaler = GradScaler("cuda")
 
     for epoch in range(train_param.num_epoch):
+        model.train()
         total_summed_SE_training, total_num_contrasts_training = 0, 0
         total_summed_SE_val, total_num_contrasts_val = 0, 0
         total_summed_SE_test, total_num_contrasts_test = 0, 0
         for mb_idx, subgraph in enumerate(loader):
-            subgraph.to(GPU_device)
+            subgraph = subgraph.to(GPU_device)
+            #subgraph.x = subgraph.x.to(GPU_device)
+            #subgraph.edge_index = subgraph.edge_index.to(GPU_device)
+            #subgraph.edge_weight = subgraph.edge_weight.to(GPU_device)
             learn_rate = scheduler.get_last_lr()[-1]
             optimizer.zero_grad()
             out = model(subgraph.x,  subgraph.edge_index, subgraph.edge_weight)
@@ -140,17 +155,17 @@ if __name__ == "__main__":
             #relating to training loss....
             train_out = out[subgraph.train_mask]
             if train_param.precision == "HALF":
-                with autocast():
-                    RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat)
+                with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16):
+                    RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat, CPU_device, GPU_device)
                 scaler.scale(RMSE).backward()
                 scaler.step(optimizer)
                 scaler.update()
             elif train_param.precision == "FULL":
-                RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat)
+                RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat, CPU_device, GPU_device)
                 RMSE.backward()
                 optimizer.step()
-            num_contrasts_training = (((train_out.shape[0] **2) - train_out.shape[0])/2) + train_out.shape[0]
-            RMSE = float(RMSE.detach())
+            num_contrasts_training = (((train_out.shape[0] **2) - train_out.shape[0])/2) + train_out.shape[0] 
+            RMSE = float(RMSE.detach().to(CPU_device))
             summed_SE = (RMSE**2)*num_contrasts_training
             total_num_contrasts_training += num_contrasts_training
             total_summed_SE_training += summed_SE
@@ -159,15 +174,14 @@ if __name__ == "__main__":
 
             #detach output after training
             out = out.detach()
-            out.to(CPU_device)
-            train_out = out[subgraph.train_mask]
+            out = out.to(CPU_device)
+            train_out = out[subgraph.train_mask.to(CPU_device)]
 
             #relating to validation loss....
             
-            val_out = out[subgraph.val_mask]
-            val_out.to(CPU_device)
-            RMSE_val, num_contrasts_val = loss_func.RMSE_dotprod_vs_coexp_testval(val_out, subgraph.y[subgraph.val_mask],
-                                                                                  train_out , subgraph.y[subgraph.train_mask],
+            val_out = out[subgraph.val_mask.to(CPU_device)]
+            RMSE_val, num_contrasts_val = loss_func.RMSE_dotprod_vs_coexp_testval(val_out, subgraph.y[subgraph.val_mask].to(CPU_device),
+                                                                                  train_out , subgraph.y[subgraph.train_mask].to(CPU_device),
                                                                                   coexp_adj_mat)
             
             summed_SE_val = float(RMSE_val**2)*num_contrasts_val
@@ -175,10 +189,10 @@ if __name__ == "__main__":
             total_summed_SE_val += summed_SE_val
 
             #relating to testing loss....
-            test_out = out[subgraph.test_mask]
-            val_out.to(CPU_device)
-            RMSE_test, num_contrasts_test = loss_func.RMSE_dotprod_vs_coexp_testval(test_out, subgraph.y[subgraph.test_mask],
-                                                                                  train_out , subgraph.y[subgraph.train_mask],
+            test_out = out[subgraph.test_mask.to(CPU_device)]
+
+            RMSE_test, num_contrasts_test = loss_func.RMSE_dotprod_vs_coexp_testval(test_out, subgraph.y[subgraph.test_mask].to(CPU_device),
+                                                                                  train_out , subgraph.y[subgraph.train_mask].to(CPU_device),
                                                                                   coexp_adj_mat)
             
             summed_SE_test = float((RMSE_test**2))*num_contrasts_test
@@ -198,16 +212,17 @@ if __name__ == "__main__":
         
         
         scheduler.step(train_loss_aggregated)
+        #clear cache
+        torch.cuda.empty_cache()
 
         if epoch > 0 and epoch % train_param.inference_interval == 0:
             print(f"epoch: {epoch}| Proceeding with Inference for evaluation")
             infer_out = infer()
-            infer_out.to(CPU_device)
             infer_train_out = infer_out[input_graph.train_mask]
             infer_val_out = infer_out[input_graph.val_mask]
             infer_test_out = infer_out[input_graph.test_mask]
 
-            infer_train_RMSE = loss_func.RMSE_dotprod_vs_coexp(infer_train_out, input_graph.y[input_graph.train_mask], coexp_adj_mat)
+            infer_train_RMSE = loss_func.RMSE_dotprod_vs_coexp(infer_train_out, input_graph.y[input_graph.train_mask], coexp_adj_mat, CPU_device, CPU_device) # both CPU devices
             infer_val_RMSE, _ = loss_func.RMSE_dotprod_vs_coexp_testval(infer_val_out, input_graph.y[input_graph.val_mask],
                                                                     infer_train_out , input_graph.y[input_graph.train_mask],
                                                                     coexp_adj_mat)
@@ -228,6 +243,7 @@ if __name__ == "__main__":
                 embeddings_path = os.path.join(infer_dump_dir,f"Epoch{epoch}_emb.pkl")
                 with open(embeddings_path, "wb") as fbout:
                     pickle.dump(infer_out, fbout)
+        #clear cache
 
 
 
