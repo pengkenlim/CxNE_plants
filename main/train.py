@@ -52,11 +52,11 @@ if __name__ == "__main__":
     #downloading data
     if train_param.input_graph_link is not None and not os.path.exists(train_param.input_graph_path):
         print(f"input graph not found. Downloading from {train_param.input_graph_link}...")
-        gdown(train_param.input_graph_link, train_param.input_graph_path)
+        gdown.download(train_param.input_graph_link, train_param.input_graph_path)
 
     if train_param.coexp_adj_mat_link is not None and not os.path.exists(train_param.coexp_adj_mat):
         print(f"Co-expression adjacency matrix not found. Downloading from {train_param.coexp_adj_mat_link}...")
-        gdown(train_param.coexp_adj_mat_link, train_param.coexp_adj_mat)
+        gdown.download(train_param.coexp_adj_mat_link, train_param.coexp_adj_mat)
 
     #create_outdir
     if not os.path.exists(train_param.output_dir):
