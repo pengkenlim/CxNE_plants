@@ -9,10 +9,14 @@ if __name__ == "__main__":
 
 
 import torch.nn as nn
+import torch
 from torch_geometric.loader import GraphSAINTRandomWalkSampler
 from torch_geometric.nn import GATv2Conv
 from  torch_geometric.nn.resolver import activation_resolver
 from  torch_geometric.nn import BatchNorm
+from torch_geometric.utils import trim_to_layer
+
+
 
 def return_mlp(dims , out_channels, batch_norm, batch_norm_aft_last_layer, act_aft_last_layer , act, act_kwargs):
     mlp = nn.Sequential()
@@ -89,6 +93,64 @@ class CxNE(nn.Module):
                     x = self.GAT_act(x)
         x= self.decoder(x)
         return x
+    
+    @torch.no_grad()
+    def infer(self, x, batch_size, inference_batches, GPU_device, CPU_device):
+        self.to(CPU_device)
+        x.to(GPU_device)
+        """memmory efficient inference layer-by-layer, batch-by-batch"""
+        #get information for needed for batching
+        num_nodes = x.shape[0]
+        num_batches = num_nodes // batch_size + (num_nodes % batch_size > 0)
+        
+        #encoder
+        out_x = torch.tensor([])
+        out_x.to(GPU_device)
+        for i in range(num_batches):
+            start_idx = i * batch_size
+            end_idx = min(start_idx + batch_size, num_nodes)
+            out_x = torch.cat( ( out_x,
+                            self.encoder( x[start_idx:end_idx]) ) 
+                            ,0)
+        #overwrite x
+        x = out_x
+        out_x = torch.tensor([])
+        out_x.to(GPU_device)
+        #GAT
+        for i, conv in enumerate(self.GAT_convs):
+            for inference_batch_idx, inference_batch in enumerate(inference_batches):
+                inference_batch.to(GPU_device)
+                temp_x, edge_index, edge_weight = trim_to_layer(0, inference_batch.num_sampled_nodes, 
+                                                                inference_batch.num_sampled_edges, 
+                                                                x[inference_batch.n_id],
+                                                                inference_batch.edge_index,
+                                                                edge_attr= inference_batch.edge_weight)
+                
+                temp_x = conv(temp_x, edge_index, edge_attr = edge_weight)
+                if i < (len(self.GAT_convs) -1): # if not last layer
+                    if self.GAT_kwargs["batch_norm"]:
+                        temp_x = self.GAT_act(BatchNorm(temp_x.size(1))(temp_x))
+                else:# last layer
+                    if self.GAT_kwargs["batch_norm_aft_last_layer"]:
+                        temp_x = BatchNorm(temp_x.size(1))(temp_x)
+                    if self.GAT_kwargs["act_aft_last_layer"]:
+                        temp_x = self.GAT_act(temp_x)
+                out_x = torch.cat( (out_x, temp_x) ,0)
+                #print(f"GAT layer:{i},batch:{inference_batch_idx} done")
+            x = out_x
+            out_x = torch.tensor([])
+            out_x.to(GPU_device)
+        #decoder
+        for i in range(num_batches):
+            start_idx = i * batch_size
+            end_idx = min(start_idx + batch_size, num_nodes)
+            out_x = torch.cat( ( out_x,
+                            self.decoder(x[start_idx:end_idx]) ) 
+                            ,0)
+        x = out_x
+        out_x = torch.tensor([])
+        return x
+
     
 if __name__ == "__main__":
     #testing model
