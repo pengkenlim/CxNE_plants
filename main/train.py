@@ -38,6 +38,7 @@ def infer():
                                 batch.edge_weight)
                     out= out.to(CPU_device)
                     rearranged_out[batch.y.to(CPU_device)] += out
+                torch.cuda.empty_cache()
         infer_out = rearranged_out / train_param.inference_replicates
     return infer_out
 
@@ -145,9 +146,7 @@ if __name__ == "__main__":
         total_summed_SE_test, total_num_contrasts_test = 0, 0
         for mb_idx, subgraph in enumerate(loader):
             subgraph = subgraph.to(GPU_device)
-            #subgraph.x = subgraph.x.to(GPU_device)
-            #subgraph.edge_index = subgraph.edge_index.to(GPU_device)
-            #subgraph.edge_weight = subgraph.edge_weight.to(GPU_device)
+ 
             learn_rate = scheduler.get_last_lr()[-1]
             optimizer.zero_grad()
             out = model(subgraph.x,  subgraph.edge_index, subgraph.edge_weight)
@@ -169,8 +168,6 @@ if __name__ == "__main__":
             summed_SE = (RMSE**2)*num_contrasts_training
             total_num_contrasts_training += num_contrasts_training
             total_summed_SE_training += summed_SE
-            
-            #print(mb_idx, RMSE)
 
             #detach output after training
             out = out.detach()
@@ -210,8 +207,8 @@ if __name__ == "__main__":
         with open(log_path, "a") as logout:
             logout.write(f"{epoch}\t-\tAggregated_Mini_Batch_Performance\t{train_loss_aggregated:6f}\t{val_loss_aggregated:6f}\t{test_loss_aggregated:6f}\t{learn_rate}\n")
         
-        
-        scheduler.step(train_loss_aggregated)
+        #scheduler.step(train_loss_aggregated)
+
         #clear cache
         torch.cuda.empty_cache()
 
@@ -238,12 +235,16 @@ if __name__ == "__main__":
                 model_state_path = os.path.join(model_dump_dir, f"Epoch{epoch}_model_state.pth")
                 torch.save(model.state_dict(), model_state_path)
             
+            scheduler.step(infer_val_RMSE)
+
             #save embeddings
             if train_param.save_inference_embeddings:
                 embeddings_path = os.path.join(infer_dump_dir,f"Epoch{epoch}_emb.pkl")
                 with open(embeddings_path, "wb") as fbout:
                     pickle.dump(infer_out, fbout)
         #clear cache
+        torch.cuda.empty_cache()
+
 
 
 

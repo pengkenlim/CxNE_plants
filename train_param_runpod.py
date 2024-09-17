@@ -1,37 +1,37 @@
 #Default training parameters
 
 #   System paramters
-num_workers = 24    #--------------------------------------------------------- No. workers for some CPU tasks
+num_workers = 9    #--------------------------------------------------------- No. workers for some CPU tasks
 mode = 'GPU'        #---------------------------------------------------------Options = ['CPU', 'GPU']
 precision = "HALF"      #-----------------------------------------------------Half precision to reduce memory overhead. Options = ["FULL", "HALF"]
 
 #   Download links (google drive only). Will only download if input_graph_path and coexp_adj_mat is missing. Put None to ignore
-input_graph_link = "https://drive.google.com/uc?id=1F3jdUgdKuCD1wrhcfmRTZh9FtDsALvc4"
-coexp_adj_mat_link = "https://drive.google.com/uc?id=1F4eEwFZYyBs9Kf4b-Pa4_Zh20HG01FLB"
+input_graph_link = None #"https://drive.google.com/uc?id=1F4m19Kn-EzqGH9efT9xs3Clq_zE4bdpv"
+coexp_adj_mat_link = None #"https://drive.google.com/uc?id=1F4eEwFZYyBs9Kf4b-Pa4_Zh20HG01FLB"
 
 #   dir/file paths
 input_graph_path = '/workspace/data/taxid3702/adj_mat_zscore_5percent_data.pkl'        #-------------------------Path to input data. Needs to be a pickled "torch_geometric.data.Data" object describing a homogeneous graph.
 coexp_adj_mat = '/workspace/data/taxid3702/adj_mat_zscore.pkl'      #-------------Path to zscore co-expression strengths between genes in the form of a pickled numpy array.
-output_dir = '/workspace/data/model_9'     #-------------------------------------Path to directory to output training statistics and save model state
+output_dir = '/workspace/data/model_14'     #-------------------------------------Path to directory to output training statistics and save model state
 
 #   training parameters
 checkpoint_threshold_loss = 0.6        #-------------------------------------Validation loss threshold to start saving model
 num_epoch = 1000       #---------------------------------------------------------Number of epochs to train
 optimizer_kwargs = {"lr": 0.01}     #-----------------------------------------Params for ADAM optimizer
-scheduler_kwargs = {"factor": 0.5,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #epochs = patience
-                    "patience":10}        
+scheduler_kwargs = {"factor": 0.5,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #inferences = patience
+                    "patience":1}        #the patience here refer to the number of inferences without validation loss decrease
 
 # clusterGCN parameters
 clusterGCN_num_parts = 1000
-clusterGCN_parts_perbatch = 100
+clusterGCN_parts_perbatch = 50
 
 # full batch inference parameters
-inference_interval = 10
-inference_replicates = 10
+inference_interval = 25
+inference_replicates = 20
 save_inference_embeddings = True
 
 #   model parameters
-encode_kwargs = {"dims": [480 , 400, 300, 200,100],        #-------------------------Params for encoder
+encode_kwargs = {"dims": [480 , 410, 340, 270, 200],        #-------------------------Params for encoder
                  "out_channels": 64,
                  "batch_norm": True,
                  "batch_norm_aft_last_layer": True,
@@ -49,7 +49,7 @@ GAT_kwargs = {"dims": [64, 64],       #-------------------------------------Para
               "heads": 10,
               "act_kwargs" : None}
 
-decode_kwargs = {"dims": [64 , 64],       #---------------------------------Params for decoder
+decode_kwargs = {"dims": [64 , 64, 64],       #---------------------------------Params for decoder
                  "out_channels": 64,
                  "batch_norm": True,
                  "batch_norm_aft_last_layer": False,
