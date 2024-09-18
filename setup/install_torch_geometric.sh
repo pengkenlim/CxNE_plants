@@ -7,6 +7,9 @@
 #To install pytorch and geometric
 ##  uncomment one of the two options
 
+apt update
+
+apt install screen
 
 #install gdown to download data
 pip install gdown

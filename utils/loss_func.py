@@ -49,7 +49,7 @@ def RMSE_dotprod_vs_coexp(embeddings, node_indices, coexp_str_adj, CPU_device, G
     node_indices = node_indices.to(CPU_device)
     subseted_coexp_str_1D = extract_top_half(subset_coexp_str(coexp_str_adj, node_indices))
     subseted_coexp_str_1D = subseted_coexp_str_1D.to(GPU_device)
-    squared_error = (dot_prod_1D - subseted_coexp_str_1D)**2
+    squared_error = (F.relu(dot_prod_1D) - F.relu(subseted_coexp_str_1D))**2
     RMSE = torch.sqrt(squared_error.nanmean())
     return RMSE
 
@@ -61,11 +61,11 @@ def RMSE_dotprod_vs_coexp_testval(embeddings_testval, node_indices_testval, embe
     test v test nodes concat test v training nodes"""
     dot_prod_1D_testval = extract_top_half(calculate_dot_product(embeddings_testval))
     subseted_coexp_str_1D_testval = extract_top_half(subset_coexp_str(coexp_adj_mat, node_indices_testval))
-    squared_error_testval = (dot_prod_1D_testval - subseted_coexp_str_1D_testval)**2
+    squared_error_testval = (F.relu(dot_prod_1D_testval) - F.relu(subseted_coexp_str_1D_testval))**2
 
     dot_prod_testval_v_training = calculate_dot_product(embeddings_testval, target=embeddings_training)
     subseted_coexp_str_testval_v_training = subset_coexp_str(coexp_adj_mat, node_indices_testval, target_indices= node_indices_training)
-    squared_error_testval_v_training = (dot_prod_testval_v_training - subseted_coexp_str_testval_v_training)**2
+    squared_error_testval_v_training = (F.relu(dot_prod_testval_v_training) - F.relu(subseted_coexp_str_testval_v_training))**2
 
     num_comparisons = len(squared_error_testval) + (squared_error_testval_v_training.shape[0] * squared_error_testval_v_training.shape[1])
     RMSE_testval = torch.sqrt( (squared_error_testval_v_training.sum() + squared_error_testval.sum() ) / num_comparisons ) 
