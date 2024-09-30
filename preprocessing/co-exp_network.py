@@ -1,15 +1,16 @@
+# %%
 #setting sys.path for importing modules
 import os
 import sys
 import scipy
 import math
 import numpy as np
-
+# %%
 if __name__ == "__main__":
          abspath= __file__
          parent_module= "/".join(abspath.split("/")[:-2])
          sys.path.insert(0, parent_module)
-
+# %%
 def calculate_edge_index(s, t, num_nodes):
     if s > t:
         s, t = t, s  # Ensure s < t
@@ -28,7 +29,7 @@ def init_adj(num_genes):
     return edge_values
 
 
-def load_network( network_dir , gene_dict=None):
+def load_network( network_dir , gene_dict=None, col_idx = 4):
     if gene_dict == None:
         genes = os.listdir(network_dir)
         gene_dict = {gene:i for i, gene in enumerate(genes)}
@@ -41,7 +42,7 @@ def load_network( network_dir , gene_dict=None):
                 if line_no != 0 and line != "": #skip first and last line
                     line_contents = line.split("\n")[0].split("\t")
                     target =  line_contents[0]
-                    weight = float(line_contents[-1])
+                    weight = float(line_contents[col_idx])
                     source_idx = gene_dict[source]
                     target_idx = gene_dict[target]
                     adj_mat[source_idx][target_idx] = weight
@@ -57,19 +58,8 @@ def zscore(data):
 
 
 def zscore_from_percentile(percentile):
-  """
-  Calculates the z-score for a given percentile in a standard normal distribution.
-
-  Args:
-    percentile: The desired percentile (0-100).
-
-  Returns:
-    The corresponding z-score.
-  """
-
   # Convert percentile to probability
   probability = percentile / 100
-
   # Calculate z-score
   z_score = scipy.stats.norm.ppf(probability)
   return z_score
@@ -78,26 +68,27 @@ def zscore_from_percentile(percentile):
 import numpy as np
 import pickle
 import os
-
+# %%
 if __name__ == "__main__":
+# %% 
     outdir = "/mnt/md2/ken/CxNE_plants_data/taxid3702/"
 
     gene_dict_path = "/mnt/md2/ken/CxNE_plants_data/taxid3702/gene_dict.pkl"
     with open(gene_dict_path, "rb") as fin:
         gene_dict = pickle.load(fin)
-    network_dir = "/mnt/md0/ken/correlation_networks/Plant-GCN_data/ATTED_b2/taxid3702/Add_ranks/combine_all_444k_RAvg"
-    gene_dict, adj_mat = load_network( network_dir , gene_dict=gene_dict)
-    
+    network_dir = "/mnt/md0/ken/correlation_networks/Plant-GCN_data/ATTED_b2/taxid3702/Build_ensemble_GCN/PCC/PCC_1k_Avg/"
+    gene_dict, adj_mat = load_network( network_dir , gene_dict=gene_dict, col_idx = -2)
+  
     gene_dict_flipped = {value : key for key, value in gene_dict.items()}
     #standardize
-    adj_mat_zscore = zscore(-1* adj_mat)
+    adj_mat_zscore = zscore(-1* adj_mat) # negative 1 for MR
     adj_mat_zscore[np.isnan(adj_mat_zscore)] = 0
-
+ 
     #save 
-    adj_mat_zscore_path = os.path.join(outdir, "adj_mat_zscore.pkl")
+    adj_mat_zscore_path = os.path.join(outdir, "adj_mat_zscore_PCC_k1_AVG.pkl")
     with open(adj_mat_zscore_path, "wb") as fout:
         pickle.dump( adj_mat_zscore, fout)
-
+# %% 
     #load
     adj_mat_zscore_path = os.path.join(outdir, "adj_mat_zscore.pkl")
     with open(adj_mat_zscore_path, "wb") as fout:
@@ -133,12 +124,12 @@ if __name__ == "__main__":
 
 
     # find cutoff
-    density = 50
+    density = 20
     cut_off = zscore_from_percentile(100- density) # zscore cutoff for 5% density
     adj_mat_zscore_5percent = adj_mat_zscore.copy()
     adj_mat_zscore_5percent[adj_mat_zscore_5percent < cut_off] = 0
     (adj_mat_zscore_5percent > 0).astype(int).sum()
-    adj_mat_zscore_5percent_path = os.path.join(outdir, "adj_mat_zscore_50percent.pkl")
+    adj_mat_zscore_5percent_path = os.path.join(outdir, "adj_mat_zscore_20percent.pkl")
     with open(adj_mat_zscore_5percent_path, "wb") as fout:
         pickle.dump( adj_mat_zscore_5percent, fout)
 

@@ -138,7 +138,7 @@ def adjacency_matrix_to_edge_index(adjacency_matrix, adjacency_matrix_2, normali
 
 workdir_main = "/mnt/md2/ken/CxNE_plants_data/models"
 workdir_root = "/mnt/md2/ken/CxNE_plants_data/"
-species = "taxid3702"
+species = "taxid59689"
 edge_index = adjacency_matrix_to_edge_index(adj_mat_zscore_5percent, adj_mat_zscore_5percent_in_degrees)
 node_degrees_to_normalize = adj_mat_zscore_5percent_in_degrees
 ########################################
@@ -160,7 +160,7 @@ with open(node_features_path, "rb") as f:
 node_features  = torch.tensor(node_features,dtype=torch.float )
 
 #load adj
-adj_mat_zscore_5percent_path = os.path.join(workdir_root, species,"adj_mat_zscore_50percent.pkl")
+adj_mat_zscore_5percent_path = os.path.join(workdir_root, species,"adj_mat_zscore_20percent.pkl")
 with open(adj_mat_zscore_5percent_path, "rb") as f:
     adj_mat_zscore_5percent= pickle.load(f)
 
@@ -169,7 +169,7 @@ with open(scaled_edge_weight_adj_mat_path, "rb") as fin:
     scaled_edge_weight_adj_mat = pickle.load(fin)
 
 #make data
-
+scaled_edge_weight_adj_mat = adj_mat_zscore_5percent
 edge_index, edge_weights, scaled_coexp_str = adjacency_matrix_to_edge_index(adj_mat_zscore_5percent, scaled_edge_weight_adj_mat,normalize_in_degrees = False)
 data = Data(x=node_features, edge_index= edge_index, edge_weight = edge_weights)
 
@@ -185,7 +185,7 @@ data.test_mask[node_split_idx["test_node_idx"]] = True
 #use y to store node idx so that we can fish out edge weights for contrastive loss function
 data.y = torch.tensor(np.array([i for i in range(data.num_nodes)]))
 
-data_path  = os.path.join(workdir_root, species,  "adj_mat_zscore_50percent_data_wonormindegrees.pkl")
+data_path  = os.path.join(workdir_root, species,  "adj_mat_zscore_20percent_data.pkl")
 with open(data_path, "wb") as fout:
     pickle.dump(data, fout)
 
