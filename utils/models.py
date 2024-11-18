@@ -51,8 +51,69 @@ def return_GAT_convs(dims, out_channels, batch_norm, batch_norm_aft_last_layer,a
     return GAT_convs
 
 class CxNE(nn.Module):
-    def __init__(self, encode_kwargs: dict , GAT_kwargs: dict , decode_kwargs: dict):
+    def __init__(self, encode_kwargs: dict, GAT_kwargs: dict, decode_kwargs: dict):
         super(CxNE, self).__init__()
+        self.encode_kwargs = encode_kwargs
+        self.encoder = return_mlp(**self.encode_kwargs)
+        
+        self.GAT_kwargs = GAT_kwargs
+        self.GAT_convs = return_GAT_convs(**self.GAT_kwargs)
+        self.GAT_act = activation_resolver(self.GAT_kwargs["act"], **(self.GAT_kwargs["act_kwargs"] or {}))
+        
+        # Independent BatchNorm layers for each GAT layer
+        self.GAT_batch_norms = nn.ModuleList(
+            [BatchNorm(dim) for dim in self.GAT_kwargs["dims"][:-1]]  # Exclude the last layer if needed
+        )
+        
+        self.decode_kwargs = decode_kwargs
+        self.decoder = return_mlp(**self.decode_kwargs)
+
+    def kaiming_innit(self):
+        # Initialize encoder weights
+        for layer in self.encoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_normal_(layer.weight, mode='fan_out', nonlinearity=self.encode_kwargs["act"])
+                nn.init.constant_(layer.bias, 0)
+        
+        # Initialize decoder weights
+        for layer in self.decoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_normal_(layer.weight, mode='fan_out', nonlinearity=self.decode_kwargs["act"])
+                nn.init.constant_(layer.bias, 0)
+        
+        # Initialize GAT weights
+        for conv in self.GAT_convs:
+            if isinstance(conv, GATv2Conv):
+                nn.init.kaiming_normal_(conv.lin_l.weight, mode='fan_out', nonlinearity=self.GAT_kwargs["act"])
+                nn.init.kaiming_normal_(conv.lin_r.weight, mode='fan_out', nonlinearity=self.GAT_kwargs["act"])
+                nn.init.constant_(conv.lin_l.bias, 0)
+                nn.init.constant_(conv.lin_r.bias, 0)
+
+    def forward(self, x, edge_index, edge_weight):
+        x = self.encoder(x)
+        
+        for i, conv in enumerate(self.GAT_convs):
+            if isinstance(conv, GATv2Conv):
+                x = conv(x, edge_index, edge_attr=edge_weight)
+            
+            # Apply BatchNorm and activation for intermediate layers
+            if i < (len(self.GAT_convs) - 1):  # If not the last layer
+                if self.GAT_kwargs["batch_norm"]:
+                    x = self.GAT_act(self.GAT_batch_norms[i](x))
+            else:  # Last layer
+                if self.GAT_kwargs["batch_norm_aft_last_layer"]:
+                    x = self.GAT_batch_norms[i](x)  # Use the last BatchNorm
+                if self.GAT_kwargs["act_aft_last_layer"]:
+                    x = self.GAT_act(x)
+        x = self.decoder(x)
+        return x
+
+
+
+class CxNE_OBSOLETE(nn.Module):
+    """OBSOLETE CLASS WHERE BATCH NORM FUNCITON DOES NOT WORK DURING MODEL EVAL"""
+    def __init__(self, encode_kwargs: dict , GAT_kwargs: dict , decode_kwargs: dict):
+        super(CxNE_OBSOLETE, self).__init__()
         self.encode_kwargs = encode_kwargs
         self.encoder = return_mlp(**self.encode_kwargs)
         self.GAT_kwargs = GAT_kwargs
@@ -96,10 +157,10 @@ class CxNE(nn.Module):
         return x
     
     @torch.no_grad()
-    def infer(self, x, batch_size, inference_batches, GPU_device, CPU_device):
+    def infer_OBSOLETE(self, x, batch_size, inference_batches, GPU_device, CPU_device):
         self.to(CPU_device)
         x.to(GPU_device)
-        """memmory efficient inference layer-by-layer, batch-by-batch"""
+        """memmory efficient inference layer-by-layer, batch-by-batch OBSOLETE"""
         #get information for needed for batching
         num_nodes = x.shape[0]
         num_batches = num_nodes // batch_size + (num_nodes % batch_size > 0)

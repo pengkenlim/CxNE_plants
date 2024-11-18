@@ -43,10 +43,10 @@ def infer():
     return infer_out
 
 if __name__ == "__main__":
-    parser= argparse.ArgumentParser(description="CxNE_plants/main/multiplex_train.py. Train a Graph Neural Network-based Model to learn Gene co-expression embeddings (CxNE).")
+    parser= argparse.ArgumentParser(description="CxNE_plants/main/train.py. Train a Graph Neural Network-based Model to learn Gene co-expression embeddings (CxNE).")
     
     parser.add_argument("-p", "--param_path",  type=str ,required = True,
-                        help= "File path to parameters needed to run multiplex_train.py.")
+                        help= "File path to parameters needed to run train.py.")
     
     #load params
     args=parser.parse_args()
@@ -246,19 +246,3 @@ if __name__ == "__main__":
                     pickle.dump(infer_out, fbout)
         #clear cache
         torch.cuda.empty_cache()
-
-
-
-
-             
-
-
-
-
-
-
-
-
-    
-
-    
