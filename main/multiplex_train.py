@@ -55,19 +55,15 @@ if __name__ == "__main__":
     #train_param = others.parse_parameters("/home/ken/CxNE_plants/train_param_skynet_test.py")
     
     #downloading data
-    if train_param.input_graph_link is not None and not os.path.exists(train_param.input_graph_path):
-        print(f"input graph not found. Downloading from {train_param.input_graph_link}...")
-        gdown.download(train_param.input_graph_link, train_param.input_graph_path)
-
-    if train_param.coexp_adj_mat_link is not None and not os.path.exists(train_param.coexp_adj_mat):
-        print(f"Co-expression adjacency matrix not found. Downloading from {train_param.coexp_adj_mat_link}...")
-        gdown.download(train_param.coexp_adj_mat_link, train_param.coexp_adj_mat)
+    if train_param.species_data_download_link is not None and not os.path.exists(train_param.input_graph_path):
+        print(f"Input data not found. Downloading from {train_param.species_data_download_link}...")
+        gdown.download(train_param.species_data_download_link, train_param.species_data_dir)
 
     #create_outdir
     if not os.path.exists(train_param.output_dir):
         os.makedirs(train_param.output_dir)
     #copy training parameters
-    shutil.copy(param_path, os.path.join(train_param.output_dir, "train_param.py"))
+    shutil.copy(param_path, os.path.join(train_param.output_dir, "multiplex_train_param.py"))
 
 
 
@@ -94,6 +90,8 @@ if __name__ == "__main__":
     scheduler = ReduceLROnPlateau(optimizer, mode='min', **train_param.scheduler_kwargs)
     print("done\n")
     
+    # I do until here
+
     #reading data
     print("loading data...")
     with open(train_param.input_graph_path, "rb") as finb:
