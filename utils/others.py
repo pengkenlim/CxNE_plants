@@ -1,5 +1,6 @@
 import importlib
 import pickle
+import joblib
 
 def parse_parameters(file_path):
     """Imports a Python module from a specified file path.
@@ -26,28 +27,5 @@ def pickle_dump(obj,path):
         pickle.dump(obj, fbin)
 
 
-def preprocessing_worker(preprocess_queue, calculation_queue, Preprocess):
-    while True:
-        batch = preprocess_queue.get()
-        if batch is None:  # Sentinel to stop the worker
-            break
-        output_1 = Preprocess(*batch)
-        calculation_queue.put(output_1)
-        preprocess_queue.task_done()
 
-def calculation_worker(calculation_queue, postprocessing_queue, Calculation):
-    while True:
-        output_1 = calculation_queue.get()
-        if output_1 is None:  # Sentinel to stop the worker
-            break
-        output_2 = Calculation(*output_1)
-        postprocessing_queue.put(output_2)
-        calculation_queue.task_done()
 
-def postprocessing_worker(postprocessing_queue, Postprocess):
-    while True:
-        output_2 = postprocessing_queue.get()
-        if output_2 is None:  # Sentinel to stop the worker
-            break
-        Postprocess(*output_2)
-        postprocessing_queue.task_done()

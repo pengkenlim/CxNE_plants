@@ -20,29 +20,44 @@ from torch_geometric.loader import ClusterData, ClusterLoader
 import numpy as np
 #from torch.cuda.amp import autocast
 from torch.amp import autocast, GradScaler
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import random
-
+import joblib
+import wandb
+import time
 from utils import others, models, loss_func
 
 
-
-input_graph, coexp_adj_mat = load_input_data(species, train_param.species_data_dir )
-
-def load_input_data(species, species_data_dir):
-    print("loading data...")
-    input_graph_path = os.
-    coexp_adj_mat_path = 
-    with open(train_param.input_graph_path, "rb") as finb:
+def load_input_data(species):
+    print(f"pre-loading data... for {species}")
+    input_graph_path = os.path.join(train_param.species_data_dir, species,  train_param.input_graph_filename)
+    coexp_adj_mat_path = os.path.join(train_param.species_data_dir, species, train_param.coexp_adj_mat_filename)
+    with open(input_graph_path, "rb") as finb:
         input_graph = pickle.load(finb)
-    print(f"input_graph at {train_param.input_graph_path} loaded")
+    print(f"input_graph at {input_graph_path} loaded")
 
-    with open(train_param.coexp_adj_mat, "rb") as finb:
+    with open(coexp_adj_mat_path, "rb") as finb:
         coexp_adj_mat = pickle.load(finb)
-    print(f"coexp_adj_mat at {train_param.coexp_adj_mat} loaded")
-    print("done\n")
+    print(f"coexp_adj_mat at {coexp_adj_mat_path} loaded")
     return input_graph, coexp_adj_mat
 
+def load_input_data_for_training(species):
+    print(f"pre-loading data... for {species}")
+    coexp_adj_mat_path = os.path.join(train_param.intermediate_data_dir, species, "coexp_adj_mat.joblib")
+    coexp_adj_mat = joblib.load(coexp_adj_mat_path)
+    loader_path = os.path.join(train_param.intermediate_data_dir, species, "loader.joblib")
+    loader = joblib.load(loader_path)
+    return loader, coexp_adj_mat
+
+def load_input_data_for_inference(species):
+    print(f"pre-loading data... for {species}")
+    coexp_adj_mat_path = os.path.join(train_param.intermediate_data_dir, species, "coexp_adj_mat.joblib")
+    coexp_adj_mat = joblib.load(coexp_adj_mat_path)
+    loader_path = os.path.join(train_param.intermediate_data_dir, species, "loader.joblib")
+    loader = joblib.load(loader_path)
+    input_graph_node_prop_path = os.path.join(train_param.intermediate_data_dir, species,"input_graph_node_prop.joblib")
+    input_graph_node_prop = joblib.load(input_graph_node_prop_path)
+    return loader, coexp_adj_mat, input_graph_node_prop
 
 if __name__ == "__main__":
     parser= argparse.ArgumentParser(description="CxNE_plants/main/train.py. Train a Graph Neural Network-based Model to learn Gene co-expression embeddings (CxNE).")
@@ -54,7 +69,7 @@ if __name__ == "__main__":
     args=parser.parse_args()
     param_path = args.param_path
     train_param = others.parse_parameters(param_path)
-    #train_param = others.parse_parameters("/home/ken/CxNE_plants/train_param_skynet_test.py")
+    #train_param = others.parse_parameters("/home/ken/CxNE_plants/multiplex_train_param_skynet.py")
     
     #downloading data
     if train_param.species_data_download_link is not None and not os.path.exists(train_param.input_graph_path):
@@ -63,7 +78,10 @@ if __name__ == "__main__":
 
     #create_outdir
     if not os.path.exists(train_param.output_dir):
-        os.makedirs(train_param.output_dir)
+        try:
+            os.makedirs(train_param.output_dir)
+        except:
+            pass
     #copy training parameters
     shutil.copy(param_path, os.path.join(train_param.output_dir, "multiplex_train_param.py"))
 
@@ -91,6 +109,19 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), **train_param.optimizer_kwargs)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', **train_param.scheduler_kwargs)
     print("done\n")
+
+    #wandb init
+    wandb.init(
+    # set the wandb project where this run will be logged
+    project= train_param.project,
+
+    name= train_param.name ,
+
+    # track hyperparameters and run metadata
+    config={attr: getattr(train_param, attr)
+        for attr in dir(train_param)
+        if not attr.startswith("__") and not callable(getattr(train_param, attr))}
+    )
     
 
     #specify and create subdirs
@@ -103,34 +134,56 @@ if __name__ == "__main__":
     log_filepaths_dict["main"] = os.path.join(train_param.output_dir, "Logs", "Main_log.txt")
     
     if not os.path.exists(log_filepaths_dict["main"]):
-        os.makedirs(os.path.join(train_param.output_dir, "Logs"))
+        try:
+            os.makedirs(os.path.join(train_param.output_dir, "Logs"))
+        except:
+            pass
         with open(log_filepaths_dict["main"], "a") as flogout:
             flogout.write("\t".join(log_headers) + "\n")
     
     embedding_dirpaths_dict = {}
     clustergcn_dirpaths_dict = {}
+    intermediate_data_dirpaths_dict = {}
     
     for species in training_species_order_list + validation_species_order_list + testing_species_order_list:
         
         clustergcn_dirpaths_dict[species] = os.path.join(train_param.clusterGCN_dir, species)
         embedding_dirpaths_dict[species] = os.path.join(train_param.output_dir, "Embeddings" , species)
+        intermediate_data_dirpaths_dict[species] = os.path.join(train_param.intermediate_data_dir,  species)
         
         if not os.path.exists(clustergcn_dirpaths_dict[species]):
-            os.makedirs(clustergcn_dirpaths_dict[species])
+            try:
+                os.makedirs(clustergcn_dirpaths_dict[species])
+            except:
+                pass
         if not os.path.exists(embedding_dirpaths_dict[species]):
-            os.makedirs(embedding_dirpaths_dict[species])
+            try:
+                os.makedirs(embedding_dirpaths_dict[species])
+            except:
+                pass
+        if not os.path.exists(intermediate_data_dirpaths_dict[species]):
+            try:
+                os.makedirs(intermediate_data_dirpaths_dict[species])
+            except:
+                pass
         
         log_filepaths_dict[species] = os.path.join(train_param.output_dir,  "Logs", species, "Species_Log.txt")
         if not os.path.exists(log_filepaths_dict[species]):
-            os.makedirs(os.path.join(train_param.output_dir, "Logs", "species"))
-            with open(log_filepaths_dict["species"], "a") as flogout:
+            try:
+                os.makedirs(os.path.join(train_param.output_dir, "Logs", species))
+            except:
+                pass
+            with open(log_filepaths_dict[species], "a") as flogout:
                 flogout.write("\t".join(log_headers) + "\n")
     
         
     #create subdir to dump model states
     model_dump_dir = os.path.join(train_param.output_dir,"Model_states")
     if not os.path.exists(model_dump_dir):
-        os.makedirs(model_dump_dir)
+        try:
+            os.makedirs(model_dump_dir)
+        except:
+            pass
     
     #moving model to GPU device (if applicable) prior to training
     model = model.to(GPU_device)
@@ -149,35 +202,97 @@ if __name__ == "__main__":
     else:
         epoch_training_species_order = training_species_order_list.copy()
 
-    #main loop to train / eval model :)
-    for epoch in range(1,train_param.num_epoch+1):
-        summed_SEMBP_train_loss, summed_SEMBP_val_loss, summed_SEMBP_test_loss = 0,0,0
-        #training...
-        model.train()
-        if train_param.shuffle_species_order:
-            random.shuffle(epoch_training_species_order)
-        #Use ProcessPoolExecutor for background data loading
-        with ProcessPoolExecutor(max_workers=1) as executor:
-            next_data_future= None
-            for species_idx, species in enumerate(epoch_training_species_order):
+    #if need overwrite_intermediate_data is False, only prepreocess species without intermediate directory 
+    if train_param.overwrite_intermediate_data:
+        combined_species = training_species_order_list + validation_species_order_list + testing_species_order_list
+    else:
+        combined_species = []
+        for species in training_species_order_list + validation_species_order_list + testing_species_order_list:
+            missing=True
+            if os.path.exists(os.path.join(intermediate_data_dirpaths_dict[species], "loader.joblib")):
+                if os.path.exists(os.path.join(intermediate_data_dirpaths_dict[species], "coexp_adj_mat.joblib")):
+                    if os.path.exists(os.path.join(intermediate_data_dirpaths_dict[species], "input_graph_node_prop.joblib")):
+                        missing = False
+            if missing:
+                combined_species.append(species)
+
+    #loop to preprocess data
+    if len(combined_species) >0:
+        print(f"Preprocessing data: Graph partitioning, storing intermediate files into {train_param.intermediate_data_dir} for repeated loading during training & inference...")
+        with ThreadPoolExecutor(max_workers=2) as preprocess_executor:
+            next_data_future_preprocess = None
+            for species_idx, species in enumerate(combined_species):
                 species_order = species_idx + 1
                 if species_order == 1: # first species
-                    input_graph, coexp_adj_mat = load_input_data(species, train_param.species_data_dir )
+                    input_graph, coexp_adj_mat = load_input_data(species)
                 else:
                     # Wait for the next species to finish loading
-                    input_graph, coexp_adj_mat = next_data_future.result()
-                
+                    input_graph, coexp_adj_mat = next_data_future_preprocess.result()
                 # Start loading the next species in the background
-                if species_order != len(training_species_order_list): #if not last species
-                    next_species = epoch_training_species_order[species_idx + 1]
-                    next_data_future = executor.submit(load_input_data, next_species,  train_param.species_data_dir)
+                if species_order != len(combined_species): #if not last species
+                    next_species = combined_species[species_idx + 1]
+                    next_data_future_preprocess = preprocess_executor.submit(load_input_data, next_species)
                 
                 # init Cluster-CGN
                 cluster_data = ClusterData(input_graph, num_parts  = train_param.clusterGCN_num_parts, save_dir= clustergcn_dirpaths_dict[species], keep_inter_cluster_edges =True)
                 loader= ClusterLoader(cluster_data, num_workers = train_param.num_workers, batch_size = train_param.clusterGCN_parts_perbatch, shuffle=True)
                 
+                # generate input_graph_node_prop
+                input_graph_node_prop ={"y": input_graph.y,
+                                        "train_mask":input_graph.train_mask,
+                                        "val_mask":input_graph.val_mask,
+                                        "test_mask":input_graph.test_mask}
+
+                # save data
+                loader_path = os.path.join(intermediate_data_dirpaths_dict[species], "loader.joblib")
+                joblib.dump(loader, loader_path, compress=('lz4', 0)) #basically no compression at all. 
+
+                coexp_adj_mat_path = os.path.join(intermediate_data_dirpaths_dict[species], "coexp_adj_mat.joblib")
+                joblib.dump(coexp_adj_mat, coexp_adj_mat_path, compress=('lz4', 0)) #basically no compression at all. 
+
+                input_graph_node_prop_path = os.path.join(intermediate_data_dirpaths_dict[species], "input_graph_node_prop.joblib")
+                joblib.dump(input_graph_node_prop, input_graph_node_prop_path, compress=('lz4', 0)) #basically no compression at all. 
+                print(f"{species} preprocessing done.")
+            print("Data preprocessing complete.")
+    else:
+        print("Overwrite disabled by user and there are no intermediate data to preprocess.")
+
+    print("Starting model training...")
+    #main loop to train / eval model :)
+    combined_species = training_species_order_list + validation_species_order_list + testing_species_order_list
+    for epoch in range(1,train_param.num_epoch+1):
+        epoch_performance_dict = {"epoch": epoch}
+        epoch_performance_dict["losses"] = {"training_mode":{}}
+
+        summed_AMBP_train_loss, summed_AMBP_val_loss, summed_AMBP_test_loss = 0,0,0
+        #training...
+        model.train()
+        if train_param.shuffle_species_order:
+            random.shuffle(epoch_training_species_order)
+        
+        #Use ProcessPoolExecutor for background data loading
+        
+        epoch_performance_dict["training_order"] = {species: idx +1 for idx , species in enumerate(epoch_training_species_order)}
+        
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            epoch_performance_dict["losses"]["training_mode"]["AMBP"] = {}
+            next_data_future= None
+            for species_idx, species in enumerate(epoch_training_species_order):
+                species_order = species_idx + 1
+                if species_order == 1: # first species
+                    loader, coexp_adj_mat = load_input_data_for_training(species)
+                else:
+                    # Wait for the next species to finish loading
+                    loader, coexp_adj_mat = next_data_future.result()
+                
+                # Start loading the next species in the background
+                if species_order != len(training_species_order_list): #if not last species
+                    next_species = epoch_training_species_order[species_idx + 1]
+                    next_data_future = executor.submit(load_input_data_for_training, next_species)
+                
                 # start training model using species data
                 summed_MBP_train_loss, summed_MBP_val_loss , summed_MBP_test_loss= 0 , 0, 0
+                
                 for mb_idx, subgraph in enumerate(loader):
                     #setup
                     batch_no = mb_idx + 1
@@ -192,7 +307,7 @@ if __name__ == "__main__":
                     train_out = out[subgraph.train_mask]
 
                     with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16):
-                        RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat, CPU_device, GPU_device)
+                        RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat, GPU_device)
                     scaler.scale(RMSE).backward()
                     scaler.step(optimizer)
                     scaler.update()
@@ -224,54 +339,69 @@ if __name__ == "__main__":
                         flogout.write(f"Training\tMini-Batch Performance (MBP)\t{epoch}\t{species_order}\tTraining\t{species}\t{batch_no}\t{RMSE}\t{RMSE_val}\t{RMSE_test}\t{learn_rate}\n")
                     with open(log_filepaths_dict["main"], "a") as flogout:
                         flogout.write(f"Training\tMini-Batch Performance (MBP)\t{epoch}\t{species_order}\tTraining\t{species}\t{batch_no}\t{RMSE}\t{RMSE_val}\t{RMSE_test}\t{learn_rate}\n")
-                    
+                          
                     #clear cache
                     torch.cuda.empty_cache()
 
-                SEMBP_train_loss = summed_MBP_train_loss / batch_no
-                SEMBP_val_loss = summed_MBP_val_loss / batch_no
-                SEMBP_test_loss = summed_MBP_test_loss / batch_no
+                AMBP_train_loss = summed_MBP_train_loss / batch_no
+                AMBP_val_loss = summed_MBP_val_loss / batch_no
+                AMBP_test_loss = summed_MBP_test_loss / batch_no
                 
-                summed_SEMBP_train_loss += SEMBP_train_loss
-                summed_SEMBP_val_loss += SEMBP_val_loss
-                summed_SEMBP_test_loss += SEMBP_test_loss
+                summed_AMBP_train_loss += AMBP_train_loss
+                summed_AMBP_val_loss += AMBP_val_loss
+                summed_AMBP_test_loss += AMBP_test_loss
 
-                print(f"Mode: Training\tType: SEMBP\tEpoch: {epoch}\tSpecies: {species}\tTr_loss: {SEMBP_train_loss:5f}\tVal_loss: {SEMBP_val_loss:5f}\tTst_loss: {SEMBP_test_loss:5f}")
+                print(f"Mode: Training\tType: AMBP\tEpoch: {epoch}\tSpecies: {species}\tTr_loss: {AMBP_train_loss:5f}\tVal_loss: {AMBP_val_loss:5f}\tTst_loss: {AMBP_test_loss:5f}")
                 with open(log_filepaths_dict[species], "a") as flogout:
-                    flogout.write(f"Training\tSpecies-specific Epoch MBP (SEMBP)\t{epoch}\t{species_order}\tTraining\t{species}\t-\t{SEMBP_train_loss}\t{SEMBP_val_loss}\t{SEMBP_test_loss}\t{learn_rate}\n")
+                    flogout.write(f"Training\tAverage MBP (AMBP)\t{epoch}\t{species_order}\tTraining\t{species}\t-\t{AMBP_train_loss}\t{AMBP_val_loss}\t{AMBP_test_loss}\t{learn_rate}\n")
                 with open(log_filepaths_dict["main"], "a") as flogout:
-                    flogout.write(f"Training\tSpecies-specific Epoch MBP (SEMBP)\t{epoch}\t{species_order}\tTraining\t{species}\t-\t{SEMBP_train_loss}\t{SEMBP_val_loss}\t{SEMBP_test_loss}\t{learn_rate}\n")
+                    flogout.write(f"Training\tAverage MBP (AMBP)\t{epoch}\t{species_order}\tTraining\t{species}\t-\t{AMBP_train_loss}\t{AMBP_val_loss}\t{AMBP_test_loss}\t{learn_rate}\n")
+                
+                epoch_performance_dict["losses"]["training_mode"]["AMBP"][species] = {"tr_loss": AMBP_train_loss,
+                                                                                        "val_loss": AMBP_val_loss,
+                                                                                        "tst_loss": AMBP_test_loss}
             
             num_training_species = len(training_species_order_list)
-            ASEMBP_train_loss = summed_SEMBP_train_loss / num_training_species
-            ASEMBP_val_loss = summed_SEMBP_val_loss / num_training_species
-            ASEMBP_test_loss = summed_SEMBP_test_loss / num_training_species
+            
+            Average_AMBP_train_loss = summed_AMBP_train_loss / num_training_species
+            Average_AMBP_val_loss = summed_AMBP_val_loss / num_training_species
+            Average_AMBP_test_loss = summed_AMBP_test_loss / num_training_species
+            print(f"Mode: Training\tType: Average AMBP\tEpoch: {epoch}\tSpecies: -\tTr_loss: {Average_AMBP_train_loss:5f}\tVal_loss: {Average_AMBP_val_loss:5f}\tTst_loss: {Average_AMBP_test_loss:5f}")
+            with open(log_filepaths_dict[species], "a") as flogout:
+                flogout.write(f"Training\tAverage AMBP\t{epoch}\t-\t-\t-\t-\t{Average_AMBP_train_loss}\t{Average_AMBP_val_loss}\t{Average_AMBP_test_loss}\t{learn_rate}\n")
+            with open(log_filepaths_dict["main"], "a") as flogout:
+                flogout.write(f"Training\tAverage AMBP\t{epoch}\t-\t-\t-\t-\t{Average_AMBP_train_loss}\t{Average_AMBP_val_loss}\t{Average_AMBP_test_loss}\t{learn_rate}\n")
+            
+            epoch_performance_dict["losses"]["training_mode"]["Average AMBP"] = {"tr_loss": Average_AMBP_train_loss,
+                                                                                        "val_loss": Average_AMBP_val_loss,
+                                                                                        "tst_loss": Average_AMBP_test_loss}
+            epoch_performance_dict["learning_rate"] = learn_rate
 
-            if epoch % train_param.inference_interval == 0:
-                #inference...
-                model.eval()
-                summed_train_SFBP,  summed_val_SFBP, summed_test_SFBP = 0, 0 , 0 
-                with torch.no_grad() and  ProcessPoolExecutor(max_workers=1) as executor:
-                    next_data_future= None
-                    for species_idx, species in enumerate(training_species_order_list + validation_species_order_list + testing_species_order_list):
+        if epoch % train_param.inference_interval == 0:
+            #inference...
+            model.eval()
+            summed_train_FBP,  summed_val_FBP, summed_test_FBP = 0, 0 , 0 
+            epoch_performance_dict["losses"]["inference_mode"] = {}
+            epoch_performance_dict["losses"]["inference_mode"]["FBP"] = {} 
+            with torch.no_grad(): 
+                with ThreadPoolExecutor(max_workers=2) as executor_inference:
+                    next_data_future_inference= None
+                    
+                    for species_idx, species in enumerate(combined_species):
                         species_order = species_idx + 1
                         if species_order == 1: # first species
-                            input_graph, coexp_adj_mat = load_input_data(species, train_param.species_data_dir )
+                            loader, coexp_adj_mat, input_graph_node_prop = load_input_data_for_inference(species )
                         else:
                             # Wait for the next species to finish loading
-                            input_graph, coexp_adj_mat = next_data_future.result()
-                    
-                        # Start loading the next species in the background
-                        if species_order != len(training_species_order_list): #if not last species
-                            next_species = epoch_training_species_order[species_idx + 1]
-                            next_data_future = executor.submit(load_input_data, next_species,  train_param.species_data_dir)
-                    
-                        # init Cluster-CGN
-                        cluster_data = ClusterData(input_graph, num_parts  = train_param.clusterGCN_num_parts, save_dir= clustergcn_dirpaths_dict[species], keep_inter_cluster_edges =True)
-                        loader= ClusterLoader(cluster_data, num_workers = train_param.num_workers, batch_size = train_param.clusterGCN_parts_perbatch, shuffle=True) 
+                            loader, coexp_adj_mat, input_graph_node_prop = next_data_future_inference.result()
                         
+                        # Start loading the next species in the background
+                        if species_order != len(combined_species): #if not last species
+                            next_species = combined_species[species_idx + 1]
+                            next_data_future_inference = executor_inference.submit(load_input_data_for_inference, next_species)
+                            
                         #run inference
-                        rearranged_out = torch.zeros(input_graph.x.size()[0], train_param.decode_kwargs["out_channels"])
+                        rearranged_out = torch.zeros(len(input_graph_node_prop["y"]), train_param.decode_kwargs["out_channels"])
                         with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16):
                             for i in range(train_param.inference_replicates):
                                 for batch_idx , batch in enumerate(loader):
@@ -284,65 +414,85 @@ if __name__ == "__main__":
                                 torch.cuda.empty_cache()
                         infer_out = rearranged_out / train_param.inference_replicates
                         if species in training_species_order_list: # if training species...
-                            infer_train_out = infer_out[input_graph.train_mask]
-                            infer_val_out = infer_out[input_graph.val_mask]
-                            infer_test_out = infer_out[input_graph.test_mask]
+                            infer_train_out = infer_out[input_graph_node_prop["train_mask"]]
+                            infer_val_out = infer_out[input_graph_node_prop["val_mask"]]
+                            infer_test_out = infer_out[input_graph_node_prop["test_mask"]]
 
-                            train_SFBP = loss_func.RMSE_dotprod_vs_coexp(infer_train_out, input_graph.y[input_graph.train_mask], coexp_adj_mat, CPU_device, CPU_device) # both CPU devices
-                            val_SFBP, _ = loss_func.RMSE_dotprod_vs_coexp_testval(infer_val_out, input_graph.y[input_graph.val_mask],
-                                                                                    infer_train_out , input_graph.y[input_graph.train_mask],
-                                                                                    coexp_adj_mat)
-                            test_SFBP, _ = loss_func.RMSE_dotprod_vs_coexp_testval(infer_test_out, input_graph.y[input_graph.test_mask],
-                                                                                    infer_train_out , input_graph.y[input_graph.train_mask],
-                                                                                    coexp_adj_mat)
+                            train_FBP = loss_func.RMSE_dotprod_vs_coexp(infer_train_out, input_graph_node_prop["y"][input_graph_node_prop["train_mask"]], coexp_adj_mat, CPU_device) # use CPU device
+                            val_FBP, _ = loss_func.RMSE_dotprod_vs_coexp_testval(infer_val_out, input_graph_node_prop["y"][input_graph_node_prop["val_mask"]],
+                                                                                        infer_train_out , input_graph_node_prop["y"][input_graph_node_prop["train_mask"]],
+                                                                                        coexp_adj_mat)
+                            test_FBP, _ = loss_func.RMSE_dotprod_vs_coexp_testval(infer_test_out, input_graph_node_prop["y"][input_graph_node_prop["test_mask"]],
+                                                                                        infer_train_out , input_graph_node_prop["y"][input_graph_node_prop["train_mask"]],
+                                                                                        coexp_adj_mat)
                             #reporting / logging
-                            print(f"Mode: Inference\tType: SFBP\tEpoch: {epoch}\tSpecies Type: Training\tSpecies: {species}\tTr_loss: {train_SFBP:5f}\tVal_loss: {val_SFBP:5f}\tTst_loss: {test_SFBP:5f}")
+                            print(f"Mode: Inference\tType: FBP\tEpoch: {epoch}\tSpecies Type: Training\tSpecies: {species}\tTr_loss: {train_FBP:5f}\tVal_loss: {val_FBP:5f}\tTst_loss: {test_FBP:5f}")
                             with open(log_filepaths_dict[species], "a") as flogout:
-                                flogout.write(f"Inference\tSpecies-specific Full Batch Performance (SFBP)\t{epoch}\t-\tTraining\t{species}\t-\t{train_SFBP}\t{val_SFBP}\t{test_SFBP}\t{learn_rate}\n")
+                                flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\tTraining\t{species}\t-\t{train_FBP}\t{val_FBP}\t{test_FBP}\t{learn_rate}\n")
                             with open(log_filepaths_dict["main"], "a") as flogout:
-                                flogout.write(f"Inference\tSpecies-specific Full Batch Performance (SFBP)\t{epoch}\t-\tTraining\t{species}\t-\t{train_SFBP}\t{val_SFBP}\t{test_SFBP}\t{learn_rate}\n")
-
-                            summed_train_SFBP += train_SFBP
-                            summed_val_SFBP += val_SFBP
-                            summed_test_SFBP += test_SFBP
+                                flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\tTraining\t{species}\t-\t{train_FBP}\t{val_FBP}\t{test_FBP}\t{learn_rate}\n")
+                            
+                            epoch_performance_dict["losses"]["inference_mode"]["FBP"][species] = {"tr_loss": train_FBP,
+                                                                                        "val_loss": val_FBP,
+                                                                                        "tst_loss": test_FBP,
+                                                                                        "species_type": "Training"}
+                            
+                            summed_train_FBP += train_FBP
+                            summed_val_FBP += val_FBP
+                            summed_test_FBP += test_FBP
 
                         else: #for validation / testing species
                             #all nodes are validation / testing nodes.
-                            SFBP = loss_func.RMSE_dotprod_vs_coexp(infer_out, input_graph.y, coexp_adj_mat, CPU_device, CPU_device) # both CPU devices
-                            
+                            FBP = loss_func.RMSE_dotprod_vs_coexp(infer_out, input_graph_node_prop["y"], coexp_adj_mat, CPU_device) # use CPU device
+                                
                             #check if validation or testing species
                             if species in validation_species_order_list: # if validation species
-                                print(f"Mode: Inference\tType: SFBP\tEpoch: {epoch}\tSpecies Type: Validation\tSpecies: {species}\tTr_loss: -\tVal_loss: {SFBP:5f}\tTst_loss: -")
+                                print(f"Mode: Inference\tType: FBP\tEpoch: {epoch}\tSpecies Type: Validation\tSpecies: {species}\tTr_loss: -\tVal_loss: {FBP:5f}\tTst_loss: -")
                                 with open(log_filepaths_dict[species], "a") as flogout:
-                                    flogout.write(f"Inference\tSpecies-specific Full Batch Performance (SFBP)\t{epoch}\t-\Validation\t{species}\t-\t-\t{SFBP}\t-\t{learn_rate}\n")
+                                    flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Validation\t{species}\t-\t-\t{FBP}\t-\t{learn_rate}\n")
                                 with open(log_filepaths_dict["main"], "a") as flogout:
-                                    flogout.write(f"Inference\tSpecies-specific Full Batch Performance (SFBP)\t{epoch}\t-\Validation\t{species}\t-\t-\t{SFBP}\t-\t{learn_rate}\n")
+                                    flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Validation\t{species}\t-\t-\t{FBP}\t-\t{learn_rate}\n")
                                 
-                                summed_val_SFBP += SFBP
+                                epoch_performance_dict["losses"]["inference_mode"]["FBP"][species] = {"val_loss": FBP,
+                                                                                        "species_type": "Validation"}
                             
+                                summed_val_FBP += FBP
+
                             else: # if testing species
-                                print(f"Mode: Inference\tType: SFBP\tEpoch: {epoch}\tSpecies Type: Validation\tSpecies: {species}\tTr_loss: -\tVal_loss: -\tTst_loss: {SFBP:5f}")
+                                print(f"Mode: Inference\tType: FBP\tEpoch: {epoch}\tSpecies Type: Testing\tSpecies: {species}\tTr_loss: -\tVal_loss: -\tTst_loss: {FBP:5f}")
                                 with open(log_filepaths_dict[species], "a") as flogout:
-                                    flogout.write(f"Inference\tSpecies-specific Full Batch Performance (SFBP)\t{epoch}\t-\Validation\t{species}\t-\t-\t-\t{SFBP}\t{learn_rate}\n")
+                                    flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Testing\t{species}\t-\t-\t-\t{FBP}\t{learn_rate}\n")
                                 with open(log_filepaths_dict["main"], "a") as flogout:
-                                    flogout.write(f"Inference\tSpecies-specific Full Batch Performance (SFBP)\t{epoch}\t-\Validation\t{species}\t-\t-\t-\t{SFBP}\t{learn_rate}\n")
+                                    flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Testing\t{species}\t-\t-\t-\t{SFBPFBP}\t{learn_rate}\n")
                                 
-                                summed_test_SFBP += SFBP
-                                    #save embeddings
+                                epoch_performance_dict["losses"]["inference_mode"]["FBP"][species] = {"tst_loss": FBP,
+                                                                                        "species_type": "Testing"}
+                                    
+                                summed_test_FBP += FBP
+                        #save embeddings
                         if train_param.save_inference_embeddings:
                             embeddings_path = os.path.join(embedding_dirpaths_dict[species],f"Epoch{epoch}_emb.pkl")
                             with open(embeddings_path, "wb") as fbout:
                                 pickle.dump(infer_out, fbout)
-                        
-                    ASFBP_train = summed_train_SFBP / len(training_species_order_list)
-                    ASFBP_val = summed_val_SFBP / len(training_species_order_list + validation_species_order_list)
-                    ASFBP_test = summed_test_SFBP / len(training_species_order_list + testing_species_order_list)
-                    print(f"Mode: Inference\tType: ASFBP\tEpoch: {epoch}\tTr_loss: {ASFBP_train:5f}\tVal_loss: {ASFBP_val:5f}\tTst_loss: {ASFBP_test:5f}")
-                    with open(log_filepaths_dict[species], "a") as flogout:
-                        flogout.write(f"Inference\tAverage SFBP (ASFBP)\t{epoch}\t-\-\t-\t-\t{ASFBP_train}\t{ASFBP_val}\t{ASFBP_test}\t{learn_rate}\n")
-                    with open(log_filepaths_dict["main"], "a") as flogout:
-                        flogout.write(f"Inference\tAverage SFBP (ASFBP)\t{epoch}\t-\-\t-\t-\t{ASFBP_train}\t{ASFBP_val}\t{ASFBP_test}\t{learn_rate}\n")
-                    model_state_path = os.path.join(model_dump_dir, f"Epoch{epoch}_model_state.pth")
-                    torch.save(model.state_dict(), model_state_path)
-                    scheduler.step(ASFBP_val)
+                    
+            Average_FBP_train = summed_train_FBP / len(training_species_order_list)
+            Average_FBP_val = summed_val_FBP / len(training_species_order_list + validation_species_order_list)
+            Average_FBP_test = summed_test_FBP / len(training_species_order_list + testing_species_order_list)
+
+            print(f"Mode: Inference\tType: AFBP\tEpoch: {epoch}\tTr_loss: {Average_FBP_train:5f}\tVal_loss: {Average_FBP_val:5f}\tTst_loss: {Average_FBP_test:5f}")
+            with open(log_filepaths_dict[species], "a") as flogout:
+                flogout.write(f"Inference\tAverage FBP\t{epoch}\t-\-\t-\t-\t{Average_FBP_train}\t{Average_FBP_val}\t{Average_FBP_test}\t{learn_rate}\n")
+            with open(log_filepaths_dict["main"], "a") as flogout:
+                flogout.write(f"Inference\tAverage FBP\t{epoch}\t-\-\t-\t-\t{Average_FBP_train}\t{Average_FBP_val}\t{Average_FBP_test}\t{learn_rate}\n")
+            
+            epoch_performance_dict["losses"]["inference_mode"]["Average FBP"]= {"tr_loss": Average_FBP_train,
+                                                                                        "val_loss": Average_FBP_val,
+                                                                                        "tst_loss": Average_FBP_test}
+
+            model_state_path = os.path.join(model_dump_dir, f"Epoch{epoch}_model_state.pth")
+            torch.save(model.state_dict(), model_state_path)
+            scheduler.step(Average_FBP_val)
+
+        wandb.log(epoch_performance_dict)
+    wandb.finish()
 

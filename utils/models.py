@@ -64,7 +64,8 @@ class CxNE(nn.Module):
         self.GAT_batch_norms = nn.ModuleList(
             [BatchNorm(dim) for dim in self.GAT_kwargs["dims"][:-1]]  # Exclude the last layer if needed
         )
-        
+        if self.GAT_kwargs["batch_norm_aft_last_layer"]:
+            self.GAT_batch_norms.append(BatchNorm(self.GAT_kwargs["out_channels"]))
         self.decode_kwargs = decode_kwargs
         self.decoder = return_mlp(**self.decode_kwargs)
 

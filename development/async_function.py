@@ -137,7 +137,7 @@ for epoch in range(2, epochs):
 wandb.finish()
 
 # %%
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 def load(data_path):
@@ -153,7 +153,7 @@ def run(data):
 data_paths = ["path1", "path2", "path3", "path4"]
 
 # Use ProcessPoolExecutor for background data loading
-with ProcessPoolExecutor(max_workers=1) as executor:
+with ThreadPoolExecutor(max_workers=1) as executor:
     next_data_future = None  # Placeholder for the future
     
     for data_idx, data_path in enumerate(data_paths):
@@ -170,4 +170,21 @@ with ProcessPoolExecutor(max_workers=1) as executor:
         # Process the current batch
         results = run(current_data)
         print(f"Results for {data_path}: {results}")
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        next_data_future = None  # Placeholder for the future
+        
+        for data_idx, data_path in enumerate(data_paths):
+            if data_idx == 0:  # First batch
+                current_data = load(data_path)
+            else:
+                # Wait for the next batch to finish loading
+                current_data = next_data_future.result()
+
+            # Start loading the next batch in the background
+            if data_idx != len(data_paths) - 1:  # Not the last batch
+                next_data_future = executor.submit(load, data_paths[data_idx + 1])
+            
+            # Process the current batch
+            results = run(current_data)
+            print(f"Results for {data_path}: {results}")
 # %%

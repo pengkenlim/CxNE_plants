@@ -946,5 +946,148 @@ for epoch in range(num_epochs):
     epoch_train_performance[epoch] = float(round(np.sqrt(total_summed_SE / total_num_contrasts), 5))
     print(f"epoch {epoch}, RMSE across batches: {epoch_train_performance[epoch]}")
 
+# %%
+# load
+import torch
+import os
+import sys
+import pickle
+import numpy as np
 
-        
+tensor = torch.load('/mnt/md2/ken/CxNE_plants_data/species_data/neo4j_input/interproscan/input_fasta/esm/taxid3702/ATMG01370.1 pacid=37383531 transcript=ATMG01370.1 locus=ATMG01370 ID=ATMG01370.1.Araport11.447 annot-version=Araport11.pt')
+
+tensor["mean_representations"][36]
+# %%
+workdir = "/mnt/md2/ken/CxNE_plants_data/species_data/neo4j_input/interproscan/input_fasta/esm"
+species_data_dir = "/mnt/md2/ken/CxNE_plants_data/species_data/"
+species_list  = [species for species in os.listdir(workdir) if "taxid" in species]
+species_list = [species for species in species_list if species != "taxid81970"]
+
+
+# %%
+embdims = 2560
+layer_extracted = 36
+species_list = ["taxid59689", "taxid3694", "taxid29760"]
+for species in species_list:
+    #load
+    gene_dict_path = os.path.join(species_data_dir,species,"gene_dict.pkl")
+    Tid2Gid_dict_path = os.path.join(species_data_dir,species,"Tid2Gid_dict.pkl")
+    with open(gene_dict_path, "rb") as fbin:
+        gene_dict = pickle.load(fbin)
+    node_features = np.zeros((len(gene_dict),embdims ) , dtype="float16")
+    with open(Tid2Gid_dict_path, "rb") as fbin:
+        Tid2Gid_dict = pickle.load(fbin)
+    emb_filenames = os.listdir(os.path.join(workdir, species))
+    #print(species, "embs:",len(emb_filenames))
+    print(species, "Genes:",len(gene_dict))
+    n=0
+    for emb_filename in emb_filenames:
+        try:
+            tid = emb_filename.split(" ")[0]
+            gid = Tid2Gid_dict[tid]
+            g_index = gene_dict[gid]
+            #load emb
+            emb = torch.load(os.path.join(workdir, species, emb_filename))["mean_representations"][layer_extracted].numpy().astype("float16")
+            node_features[g_index,:] = emb
+            n+= 1
+            print(n)
+        except:
+            pass
+    node_features_path = os.path.join(species_data_dir,species, "ESM3B_node_features.pkl")
+    with open(node_features_path, "wb") as fbout:
+        pickle.dump(node_features, fbout)
+    print(species, "embs_added:",n)
+
+# %%
+import random
+import math
+import scipy.sparse as sp
+#make data
+def create_random_split(n_nodes, splits):
+    # Normalize splits to sum to 1
+    total_split = sum(splits)
+    normalized_splits = [s / total_split for s in splits]
+
+    # Calculate the number of nodes for each split
+    split_sizes = [math.floor(n_nodes * s) for s in normalized_splits]
+
+    # Adjust for rounding errors to ensure the total equals n_nodes
+    while sum(split_sizes) < n_nodes:
+        for i in range(len(split_sizes)):
+            if sum(split_sizes) < n_nodes:
+                split_sizes[i] += 1
+
+    # Shuffle the node indices randomly
+    all_nodes = list(range(n_nodes))
+    random.shuffle(all_nodes)
+
+    # Assign nodes to train, validation, and test
+    train_node_idx = torch.tensor(all_nodes[:split_sizes[0]])
+    val_node_idx = torch.tensor(all_nodes[split_sizes[0]:split_sizes[0] + split_sizes[1]])
+    test_node_idx = torch.tensor(all_nodes[split_sizes[0] + split_sizes[1]:])
+
+    return train_node_idx, val_node_idx, test_node_idx
+def adjacency_matrix_to_edge_index(adjacency_matrix):
+    coo_matrix = sp.coo_matrix(adjacency_matrix)
+    row_indices = torch.tensor(coo_matrix.row, dtype=torch.long)
+    col_indices = torch.tensor(coo_matrix.col, dtype=torch.long)
+    edge_index = torch.stack([row_indices, col_indices], dim=0)
+    edge_weights = torch.tensor(coo_matrix.data, dtype=torch.float)
+
+    return edge_index, edge_weights
+
+# %%
+#load nodes_split
+species = "taxid59689"
+overwrite_node_split = True
+#load genedict
+gene_dict_path = os.path.join(species_data_dir, species, "gene_dict.pkl")
+with open(gene_dict_path, "rb") as f:
+    gene_dict= pickle.load(f)
+
+#load node features
+node_features_path = os.path.join(species_data_dir, species,  "ESM3B_node_features.pkl")
+with open(node_features_path, "rb") as f:
+    node_features= pickle.load(f)
+node_features  = torch.tensor(node_features,dtype=torch.float16 )
+
+node_split_idx_path = os.path.join(species_data_dir, species,"node_split_idx.pkl")
+if overwrite_node_split:
+    n_nodes = len(gene_dict)
+    train_node_idx, val_node_idx, test_node_idx = create_random_split(n_nodes, [0.8,0.1,0.1])
+    node_split_idx = {"train_node_idx" : train_node_idx,
+                      "val_node_idx": val_node_idx,
+                      "test_node_idx": test_node_idx }
+    with open(node_split_idx_path, "wb") as fbout:
+        pickle.dump(node_split_idx, fbout)
+else:
+    with open(node_split_idx_path, "rb") as f:
+        node_split_idx= pickle.load(f)
+
+
+#load adj
+adj_mat_zscore_5percent_path = os.path.join(species_data_dir, species,"adj_mat_zscore_20percent.pkl")
+with open(adj_mat_zscore_5percent_path, "rb") as f:
+    adj_mat_zscore_5percent= pickle.load(f)
+
+
+from torch_geometric.data import Data
+edge_index, edge_weights = adjacency_matrix_to_edge_index(adj_mat_zscore_5percent)
+data = Data(x=node_features, edge_index= edge_index, edge_weight = edge_weights.to(dtype=torch.float16))
+
+data.train_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+data.train_mask[node_split_idx["train_node_idx"]] = True
+
+data.val_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+data.val_mask[node_split_idx["val_node_idx"]] = True
+
+data.test_mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+data.test_mask[node_split_idx["test_node_idx"]] = True
+
+#use y to store node idx so that we can fish out edge weights for contrastive loss function
+data.y = torch.tensor(np.array([i for i in range(data.num_nodes)]))
+
+data_path =os.path.join(species_data_dir, species,"adj_mat_zscore_20percent_ESM3B_data.pkl")
+with open(data_path, "wb") as fbout:
+    pickle.dump(data, fbout)
+# %%
