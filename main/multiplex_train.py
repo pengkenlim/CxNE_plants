@@ -26,6 +26,7 @@ import joblib
 import wandb
 import time
 from utils import others, models, loss_func
+import gc
 
 
 def load_input_data(species):
@@ -284,6 +285,8 @@ if __name__ == "__main__":
                 else:
                     # Wait for the next species to finish loading
                     loader, coexp_adj_mat = next_data_future.result()
+                    del next_data_future
+                    gc.collect()
                 
                 # Start loading the next species in the background
                 if species_order != len(training_species_order_list): #if not last species
@@ -294,20 +297,20 @@ if __name__ == "__main__":
                 summed_MBP_train_loss, summed_MBP_val_loss , summed_MBP_test_loss= 0 , 0, 0
                 
                 for mb_idx, subgraph in enumerate(loader):
-                    #setup
-                    batch_no = mb_idx + 1
-                    subgraph = subgraph.to(GPU_device)
-                    learn_rate = scheduler.get_last_lr()[-1]
-                    optimizer.zero_grad()
-                    
-                    #forward pass and gradient calc.
-                    out = model(subgraph.x,  subgraph.edge_index, subgraph.edge_weight)
-                    
-                    #calc. MBP training loss....
-                    train_out = out[subgraph.train_mask]
-
                     with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16):
+                        #setup
+                        batch_no = mb_idx + 1
+                        subgraph = subgraph.to(GPU_device)
+                        learn_rate = scheduler.get_last_lr()[-1]
+                        optimizer.zero_grad()
+                        
+                        #forward pass and gradient calc.
+                        out = model(subgraph.x,  subgraph.edge_index, subgraph.edge_weight)
+                        
+                        #calc. MBP training loss....
+                        train_out = out[subgraph.train_mask]
                         RMSE = loss_func.RMSE_dotprod_vs_coexp(train_out, subgraph.y[subgraph.train_mask], coexp_adj_mat, GPU_device)
+
                     scaler.scale(RMSE).backward()
                     scaler.step(optimizer)
                     scaler.update()
@@ -322,26 +325,29 @@ if __name__ == "__main__":
                     #MBP validation loss calc.
                     val_out = out[subgraph.val_mask.to(CPU_device)]
                     RMSE_val, num_contrasts_val = loss_func.RMSE_dotprod_vs_coexp_testval(val_out, subgraph.y[subgraph.val_mask].to(CPU_device),
-                                                                                  train_out , subgraph.y[subgraph.train_mask].to(CPU_device),
-                                                                                  coexp_adj_mat)
+                                                                                    train_out , subgraph.y[subgraph.train_mask].to(CPU_device),
+                                                                                    coexp_adj_mat)
                     summed_MBP_val_loss += RMSE_val
 
                     #MBP testing loss calc.
                     test_out = out[subgraph.test_mask.to(CPU_device)]
                     RMSE_test, num_contrasts_test = loss_func.RMSE_dotprod_vs_coexp_testval(test_out, subgraph.y[subgraph.test_mask].to(CPU_device),
-                                                                                  train_out , subgraph.y[subgraph.train_mask].to(CPU_device),
-                                                                                  coexp_adj_mat)
+                                                                                    train_out , subgraph.y[subgraph.train_mask].to(CPU_device),
+                                                                                    coexp_adj_mat)
                     summed_MBP_test_loss += RMSE_test
 
-                    #reporting and logging
+                        #reporting and logging
                     print(f"Mode: Training\tType: MBP\tEpoch: {epoch}\tOrder: {species_order}\tSpecies: {species}\tBatch: {batch_no}\tTr_loss: {RMSE:5f}\tVal_loss: {RMSE_val:5f}\tTst_loss: {RMSE_test:5f}\tLR: {learn_rate}")
                     with open(log_filepaths_dict[species], "a") as flogout:
-                        flogout.write(f"Training\tMini-Batch Performance (MBP)\t{epoch}\t{species_order}\tTraining\t{species}\t{batch_no}\t{RMSE}\t{RMSE_val}\t{RMSE_test}\t{learn_rate}\n")
+                            flogout.write(f"Training\tMini-Batch Performance (MBP)\t{epoch}\t{species_order}\tTraining\t{species}\t{batch_no}\t{RMSE}\t{RMSE_val}\t{RMSE_test}\t{learn_rate}\n")
                     with open(log_filepaths_dict["main"], "a") as flogout:
-                        flogout.write(f"Training\tMini-Batch Performance (MBP)\t{epoch}\t{species_order}\tTraining\t{species}\t{batch_no}\t{RMSE}\t{RMSE_val}\t{RMSE_test}\t{learn_rate}\n")
-                          
+                            flogout.write(f"Training\tMini-Batch Performance (MBP)\t{epoch}\t{species_order}\tTraining\t{species}\t{batch_no}\t{RMSE}\t{RMSE_val}\t{RMSE_test}\t{learn_rate}\n")
+                            
                     #clear cache
                     torch.cuda.empty_cache()
+                del loader
+                del coexp_adj_mat
+                gc.collect()
 
                 AMBP_train_loss = summed_MBP_train_loss / batch_no
                 AMBP_val_loss = summed_MBP_val_loss / batch_no
@@ -394,6 +400,8 @@ if __name__ == "__main__":
                         else:
                             # Wait for the next species to finish loading
                             loader, coexp_adj_mat, input_graph_node_prop = next_data_future_inference.result()
+                            del next_data_future_inference
+                            gc.collect()
                         
                         # Start loading the next species in the background
                         if species_order != len(combined_species): #if not last species
@@ -463,7 +471,7 @@ if __name__ == "__main__":
                                 with open(log_filepaths_dict[species], "a") as flogout:
                                     flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Testing\t{species}\t-\t-\t-\t{FBP}\t{learn_rate}\n")
                                 with open(log_filepaths_dict["main"], "a") as flogout:
-                                    flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Testing\t{species}\t-\t-\t-\t{SFBPFBP}\t{learn_rate}\n")
+                                    flogout.write(f"Inference\tFull Batch Performance (FBP)\t{epoch}\t-\Testing\t{species}\t-\t-\t-\t{FBP}\t{learn_rate}\n")
                                 
                                 epoch_performance_dict["losses"]["inference_mode"]["FBP"][species] = {"tst_loss": FBP,
                                                                                         "species_type": "Testing"}
@@ -474,6 +482,10 @@ if __name__ == "__main__":
                             embeddings_path = os.path.join(embedding_dirpaths_dict[species],f"Epoch{epoch}_emb.pkl")
                             with open(embeddings_path, "wb") as fbout:
                                 pickle.dump(infer_out, fbout)
+                        del loader
+                        del coexp_adj_mat
+                        del input_graph_node_prop
+                        gc.collect()
                     
             Average_FBP_train = summed_train_FBP / len(training_species_order_list)
             Average_FBP_val = summed_val_FBP / len(training_species_order_list + validation_species_order_list)

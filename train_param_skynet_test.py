@@ -18,15 +18,15 @@ output_dir = '/mnt/md2/ken/CxNE_plants_data/model_7'     #----------------------
 checkpoint_threshold_loss = 0.5        #-------------------------------------Validation loss threshold to start saving model
 num_epoch = 1000       #---------------------------------------------------------Number of epochs to train
 optimizer_kwargs = {"lr": 0.01}     #-----------------------------------------Params for ADAM optimizer
-scheduler_kwargs = {"factor": 0.5,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #epochs = patience
-                    "patience":10}        
+scheduler_kwargs = {"factor": 0.316227766,      #-------------------------------------Params for scheduler. Decrease Learning rate by factor if performance does not increase after #epochs = patience
+                    "patience":1}        
 
 # clusterGCN parameters
 clusterGCN_num_parts = 1000
 clusterGCN_parts_perbatch = 100
 
 # full batch inference parameters
-inference_interval = 25
+inference_interval = 50
 inference_replicates = 10
 save_inference_embeddings = True
 

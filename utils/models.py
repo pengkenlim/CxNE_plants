@@ -18,7 +18,7 @@ from torch_geometric.utils import trim_to_layer
 
 
 
-def return_mlp(dims , out_channels, batch_norm, batch_norm_aft_last_layer, act_aft_last_layer , act, act_kwargs):
+def return_mlp_deprecated(dims , out_channels, batch_norm, batch_norm_aft_last_layer, act_aft_last_layer , act, act_kwargs):
     mlp = nn.Sequential()
     for layer, in_dim in enumerate(dims):
         if layer < len(dims) -1 : #if before last layer
@@ -39,7 +39,47 @@ def return_mlp(dims , out_channels, batch_norm, batch_norm_aft_last_layer, act_a
                                             **(act_kwargs or {})))
     return mlp
 
-def return_GAT_convs(dims, out_channels, batch_norm, batch_norm_aft_last_layer,act_aft_last_layer,act, concat, heads, act_kwargs):
+def return_mlp(dims, out_channels, norm_type, norm_aft_last_layer, act_aft_last_layer, act, act_kwargs):
+    """
+    Builds an MLP (Multi-Layer Perceptron) with configurable normalization and activation.
+
+    Args:
+        dims (list): Dimensions of the hidden layers.
+        out_channels (int): Number of output channels.
+        norm_type (str or None): Normalization type ('batch_norm', 'layer_norm', or None).
+        norm_aft_last_layer (bool): Apply normalization after the last layer.
+        act_aft_last_layer (bool): Apply activation after the last layer.
+        act (str): Activation function name (resolved by `activation_resolver`).
+        act_kwargs (dict or None): Additional kwargs for the activation function.
+
+    Returns:
+        nn.Sequential: Configured MLP model.
+    """
+    mlp = nn.Sequential()
+    for layer, in_dim in enumerate(dims):
+        if layer < len(dims) - 1:  # If before the last layer
+            out_dim = dims[layer + 1]  # Out_dim is the in_dim of the subsequent layer
+            # Add linear layer
+            mlp.append(nn.Linear(in_dim, out_dim))
+            # Add normalization if specified
+            if norm_type == 'batch_norm':
+                mlp.append(nn.BatchNorm1d(out_dim, track_running_stats=False))
+            elif norm_type == 'layer_norm':
+                mlp.append(nn.LayerNorm(out_dim))
+            # Add activation function
+            mlp.append(activation_resolver(act, **(act_kwargs or {})))
+        else:  # Last layer
+            mlp.append(nn.Linear(in_dim, out_channels))
+            if norm_aft_last_layer:
+                if norm_type == 'batch_norm':
+                    mlp.append(nn.BatchNorm1d(out_channels, track_running_stats=False))
+                elif norm_type == 'layer_norm':
+                    mlp.append(nn.LayerNorm(out_channels))
+            if act_aft_last_layer:
+                mlp.append(activation_resolver(act, **(act_kwargs or {})))
+    return mlp
+
+def return_GAT_convs_deprecated(dims, out_channels, batch_norm, batch_norm_aft_last_layer,act_aft_last_layer,act, concat, heads, act_kwargs):
     GAT_convs = nn.ModuleList()
     for layer, in_dim in enumerate(dims):
         if layer < len(dims) -1: #if before last layer
@@ -50,7 +90,18 @@ def return_GAT_convs(dims, out_channels, batch_norm, batch_norm_aft_last_layer,a
             GAT_convs.append(GATv2Conv(in_dim, out_channels, concat= concat, heads = heads, edge_dim =1))
     return GAT_convs
 
-class CxNE(nn.Module):
+def return_GAT_convs(dims, out_channels, norm_type, norm_aft_last_layer,act_aft_last_layer,act, concat, heads, act_kwargs):
+    GAT_convs = nn.ModuleList()
+    for layer, in_dim in enumerate(dims):
+        if layer < len(dims) -1: #if before last layer
+            out_dim = dims[layer+1] #out_dim is the in_dim of subsequent layer
+            #add linear layer
+            GAT_convs.append(GATv2Conv(in_dim, out_dim, concat= concat, heads = heads, edge_dim =1))
+        else: # last layer
+            GAT_convs.append(GATv2Conv(in_dim, out_channels, concat= concat, heads = heads, edge_dim =1))
+    return GAT_convs
+
+class CxNE_deprecated(nn.Module):
     def __init__(self, encode_kwargs: dict, GAT_kwargs: dict, decode_kwargs: dict):
         super(CxNE, self).__init__()
         self.encode_kwargs = encode_kwargs
@@ -104,6 +155,73 @@ class CxNE(nn.Module):
             else:  # Last layer
                 if self.GAT_kwargs["batch_norm_aft_last_layer"]:
                     x = self.GAT_batch_norms[i](x)  # Use the last BatchNorm
+                if self.GAT_kwargs["act_aft_last_layer"]:
+                    x = self.GAT_act(x)
+        x = self.decoder(x)
+        return x
+    
+class CxNE(nn.Module):
+    def __init__(self, encode_kwargs: dict, GAT_kwargs: dict, decode_kwargs: dict):
+        super(CxNE, self).__init__()
+        self.encode_kwargs = encode_kwargs
+        self.encoder = return_mlp(**self.encode_kwargs)
+
+        self.GAT_kwargs = GAT_kwargs
+        self.GAT_convs = return_GAT_convs(**self.GAT_kwargs)
+        self.GAT_act = activation_resolver(self.GAT_kwargs["act"], **(self.GAT_kwargs["act_kwargs"] or {}))
+
+        # Independent normalization layers for each GAT layer
+        self.GAT_norms = nn.ModuleList()
+        for dim in self.GAT_kwargs["dims"][:-1]:
+            if self.GAT_kwargs["norm_type"] == "batch_norm":
+                self.GAT_norms.append(BatchNorm(dim, track_running_stats=False))
+            elif self.GAT_kwargs["norm_type"] == "layer_norm":
+                self.GAT_norms.append(nn.LayerNorm(dim))
+
+        if self.GAT_kwargs["norm_aft_last_layer"]:
+            if self.GAT_kwargs["norm_type"] == "batch_norm":
+                self.GAT_norms.append(BatchNorm(self.GAT_kwargs["out_channels"], track_running_stats=False))
+            elif self.GAT_kwargs["norm_type"] == "layer_norm":
+                self.GAT_norms.append(nn.LayerNorm(self.GAT_kwargs["out_channels"]))
+
+        self.decode_kwargs = decode_kwargs
+        self.decoder = return_mlp(**self.decode_kwargs)
+
+    def kaiming_innit(self):
+        # Initialize encoder weights
+        for layer in self.encoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_normal_(layer.weight, mode='fan_out', nonlinearity=self.encode_kwargs["act"])
+                nn.init.constant_(layer.bias, 0)
+
+        # Initialize decoder weights
+        for layer in self.decoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_normal_(layer.weight, mode='fan_out', nonlinearity=self.decode_kwargs["act"])
+                nn.init.constant_(layer.bias, 0)
+
+        # Initialize GAT weights
+        for conv in self.GAT_convs:
+            if isinstance(conv, GATv2Conv):
+                nn.init.kaiming_normal_(conv.lin_l.weight, mode='fan_out', nonlinearity=self.GAT_kwargs["act"])
+                nn.init.kaiming_normal_(conv.lin_r.weight, mode='fan_out', nonlinearity=self.GAT_kwargs["act"])
+                nn.init.constant_(conv.lin_l.bias, 0)
+                nn.init.constant_(conv.lin_r.bias, 0)
+
+    def forward(self, x, edge_index, edge_weight):
+        x = self.encoder(x)
+
+        for i, conv in enumerate(self.GAT_convs):
+            if isinstance(conv, GATv2Conv):
+                x = conv(x, edge_index, edge_attr=edge_weight)
+
+            # Apply normalization and activation for intermediate layers
+            if i < (len(self.GAT_convs) - 1):  # If not the last layer
+                if self.GAT_kwargs["norm_type"] in ["batch_norm", "layer_norm"]:
+                    x = self.GAT_act(self.GAT_norms[i](x))
+            else:  # Last layer
+                if self.GAT_kwargs["norm_aft_last_layer"]:
+                    x = self.GAT_norms[i](x)  # Use the last normalization
                 if self.GAT_kwargs["act_aft_last_layer"]:
                     x = self.GAT_act(x)
         x = self.decoder(x)
