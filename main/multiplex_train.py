@@ -501,10 +501,16 @@ if __name__ == "__main__":
                                                                                         "val_loss": Average_FBP_val,
                                                                                         "tst_loss": Average_FBP_test}
 
-            model_state_path = os.path.join(model_dump_dir, f"Epoch{epoch}_model_state.pth")
-            torch.save(model.state_dict(), model_state_path)
-            scheduler.step(Average_FBP_val)
+            checkpoint_path = os.path.join(model_dump_dir, f"Epoch{epoch}_checkpoint.pth")
 
+
+            scheduler.step(Average_FBP_val)
+            torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict()}, checkpoint_path)
+            
         wandb.log(epoch_performance_dict)
     wandb.finish()
 

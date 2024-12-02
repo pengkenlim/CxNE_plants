@@ -2,7 +2,7 @@
 
 #   Wandblogging
 project = "CxNE_Viridiplantae"
-name = "Runpod_model_11"
+name = "Runpod_model_13"
 
 #   System paramters
 num_workers = 16    #--------------------------------------------------------- No. workers for some CPU tasks
@@ -74,7 +74,7 @@ GAT_kwargs = {"dims": [96, 96],       #-------------------------------------Para
 
 decode_kwargs = {"dims": [96, 96, 96],       #---------------------------------Params for decoder[64 , 64, 64]
                  "out_channels": 96,
-                "norm_type": "batch_norm",  # Can be 'batch_norm', 'layer_norm', or None
+                "norm_type": None,  # Can be 'batch_norm', 'layer_norm', or None
                 "norm_aft_last_layer": False,
                 "act_aft_last_layer": False,
                  "act" : "leaky_relu",
