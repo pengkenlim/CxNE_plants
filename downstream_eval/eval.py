@@ -12,24 +12,27 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch_geometric.nn.resolver import activation_resolver
-from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.metrics import accuracy_score, f1_score, classification_report, precision_score, recall_score
 import torch.nn.functional as F
 import pickle
+import shutil
+import wandb
+import argparse
+
+from utils import others
 
 
-# 1. Define a Dataset class (you can customize this for your specific data)
+# Dataset class
 class CustomDataset(Dataset):
     def __init__(self, data, labels):
-        self.data = torch.tensor(data, dtype=torch.float32)
-        self.labels = torch.tensor(labels, dtype=torch.long)
-
+        self.data = data.clone().to(dtype=torch.float32)       
+        self.labels = labels.clone().to(dtype=torch.long)
     def __len__(self):
         return len(self.data)
-
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx]
 
-# 2. Define the return_mlp function
+#return a Multi layer perceptron (MLP)
 def return_mlp(dims, out_channels, norm_type, norm_aft_last_layer, act_aft_last_layer, act, act_kwargs, dropout_rate=None):
     """
     Builds an MLP (Multi-Layer Perceptron) with configurable normalization, activation, and dropout.
@@ -75,129 +78,177 @@ def return_mlp(dims, out_channels, norm_type, norm_aft_last_layer, act_aft_last_
     return mlp
 
 
-# 4. Training function
-def train_model(model, train_loader, criterion, optimizer, num_epochs):
-    model.train()
-    for epoch in range(num_epochs):
-        running_loss = 0.0
-        for inputs, labels in train_loader:
-            # Move data to device if available
-            inputs, labels = inputs.to(device), labels.to(device)
-
-            # Zero the gradients
-            optimizer.zero_grad()
-
-            # Forward pass
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-
-            # Backward pass and optimization
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-
-        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {running_loss / len(train_loader):.4f}")
-
-# 5. Evaluation function
-def evaluate_model(model, test_loader):
-    model.eval()
-    all_preds = []
-    all_labels = []
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            
-            # Apply softmax to get probabilities
-            probabilities = F.softmax(outputs, dim=1)
-            
-            # Get predicted class
-            _, preds = torch.max(probabilities, 1)
-            
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-
-    acc = accuracy_score(all_labels, all_preds)
-    f1 = f1_score(all_labels, all_preds, average="weighted")
-    print(f"Accuracy: {acc:.4f}")
-    print(f"Weighted F1 Score: {f1:.4f}")
-    print("Classification Report:\n", classification_report(all_labels, all_preds))
-    return acc, f1
-
-# 6. Main script
 if __name__ == "__main__":
-    species = "taxid3702"
-    datasetprefix = "ESM3B_concat_RP11_E240"
-    labelname = "multi_class_20ptolerance"
-    batch_size =  256
-    earning_rate : 0.01
-    num_epochs : 200
+    parser= argparse.ArgumentParser(description="CxNE_plants/downstream_eval/multiclass_eval.py. Evaluate usefulness of embedding datasets in downstream tasks.")
+    
+    parser.add_argument("-p", "--param_path",  type=str ,required = True,
+                        help= "File path to parameters needed to run multiclass_eval.py.")
 
-    train_test_split = [0.8, 0.2] # must sum to 1
+    args=parser.parse_args()
+    param_path = args.param_path
+    eval_param = others.parse_parameters(param_path)
+
+    #species = "taxid3702"
+    #datasetprefix = "ESM3B_concat_RP11_E500"
+    #labelname = "multi_class_80ptolerance"
+    #batch_size =  512
+    #learning_rate = 0.01
+    #num_epochs = 100
+
+
+
+
+    #defining output dir
+    #outputdir = f"/mnt/md2/ken/CxNE_plants_data/evaluate_downstream/{species}/{species}_{datasetprefix}_{labelname}/"
+
+    # k-fold 
+    #k= 5
 
     # Parameters
-    MLP_kwargs = {"dims" : [2656 , 332, 42],
-    "out_channels" : 5, #same as number of classes
-    "norm_type" : "batch_norm",
-    "norm_aft_last_layer" : False,
-    "act_aft_last_layer" : False,
-    "act" : "leaky_relu",
-    "act_kwargs" : None,
-    "dropout_rate" : 0.05}
+    #MLP_kwargs = {"dims" : [2656 , 332, 42],
+    #"out_channels" : 6, #Must be the same as number of classes
+    #"norm_type" : "batch_norm",
+    #"norm_aft_last_layer" : False,
+    #"act_aft_last_layer" : False,
+    #"act" : "leaky_relu",
+    #"act_kwargs" : None,
+    #"dropout_rate" : 0.05}
 
     
-    speciesdir = f"/mnt/md2/ken/CxNE_plants_data/species_data/{species}/"
-    datasetdir = os.path.join(speciesdir, "datasets", datasetprefix)
+    #defining input dir 
+    #speciesdir = f"/mnt/md2/ken/CxNE_plants_data/species_data/{species}/"
+    #datasetdir = os.path.join(speciesdir, "datasets", datasetprefix)
+    #labeldir = os.path.join(speciesdir, "labels", labelname)
 
-    outputdir = f"/mnt/md2/ken/CxNE_plants_data/evaluate_downstream/{species}/{datasetprefix}/"
-
-    #load data
-    dataset_dict = {}
-    for ds_suffix in ["DS1", "DS2", "DS3", "DS4"]:
-        with open(datasetdir+ f"_{ds_suffix}.pkl", "rb") as fbin:
-            dataset_dict[ds_suffix] = pickle.load(fbin)
-
-    if not os.path.exists(outputdir):
-        os.makedirs(outputdir)
-        logdir = os.path.join(outputdir, "Logs")
-        predictoutdir = os.path.join(outputdir, "Predict_Out")
-        modelstatedir = os.path.join(outputdir, "Model_States")
-
-
-    # Example data (replace with your dataset)
-    
-
-    train_data = [[0.5, 0.2], [0.9, 0.7], [0.1, 0.8], [0.4, 0.6]]
-    train_labels = [0, 1, 2, 1]
-    test_data = [[0.3, 0.2], [0.8, 0.5]]
-    test_labels = [0, 1]
-
-    # Device configuration
+    #specify device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Datasets and DataLoaders
-    train_dataset = CustomDataset(train_data, train_labels)
-    test_dataset = CustomDataset(test_data, test_labels)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    #load data
+    #   load datasets
+    dataset_dict = {}
+    for ds_suffix in ["DS1", "DS2", "DS3", "DS4"]:
+        with open(eval_param.datasetdir + f"_{ds_suffix}.pkl", "rb") as fbin:
+            dataset_dict[ds_suffix] = pickle.load(fbin)
 
-    # Model, Loss, and Optimizer
-    model = return_mlp(**MLP_kwargs)
-    model = model.to(device)
+    with open(os.path.join(eval_param.labeldir, "labels.pkl"), "rb") as fbin:
+        labels = pickle.load(fbin)
 
-    # CrossEntropyLoss with class weights for imbalanced data
-    class_counts = torch.bincount(torch.tensor(train_labels))
-    class_weights = 1.0 / class_counts.float()
-    class_weights = class_weights / class_weights.sum()
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    with open(os.path.join(eval_param.labeldir, "labels2classes_dict.pkl"), "rb") as fbin:
+        labels2classes_dict = pickle.load(fbin)
+    target_names = []
+    
+    for i in range(len(labels2classes_dict)):
+        target_names.append(labels2classes_dict[i])
 
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    #make outputdir if not exist
+    if not os.path.exists(eval_param.outputdir):
+        os.makedirs(eval_param.outputdir)
+        logdir = os.path.join(eval_param.outputdir, "Logs")
+        Checkpointsdir = os.path.join(eval_param.outputdir, "Checkpoints")
+        os.makedirs(Checkpointsdir)
+    
+    #copy parameters
+    shutil.copy(param_path, os.path.join(eval_param.outputdir, "multiclass_eval_param.py"))
 
-    # Train and evaluate
-    train_model(model, train_loader, criterion, optimizer, num_epochs)
-    evaluate_model(model, test_loader)
+    #wandb logging
+    #wandb init
+    wandb.init(
+    # set the wandb project where this run will be logged
+    project= eval_param.project,
+    name= eval_param.name ,
+    # track hyperparameters and run metadata
+    config={attr: getattr(eval_param, attr)
+        for attr in dir(eval_param)
+        if not attr.startswith("__") and not callable(getattr(eval_param, attr))}
+    )
+    eval_param = others.parse_parameters("/home/ken/CxNE_plants/multiclass_eval_param_skynet.py")
+    #make k_fold_dataset_dict
+    k_fold_loader_dict = {}
+    k_folds =  torch.chunk(torch.randperm(labels.size(0)), eval_param.k)
+    for split_idx, fold_indices in enumerate(k_folds):
+        test_indices = fold_indices
+        train_indices = torch.cat([k_folds[j] for j in range(eval_param.k) if j != split_idx])
+        k_fold_loader_dict[split_idx] = {}
 
-    # Save the trained model
-    torch.save(model.state_dict(), "multiclass_model.pth")
-    print("Model saved as 'multiclass_model.pth'")
+        for ds_suffix, dataset in dataset_dict.items():
+            train_loader = DataLoader(CustomDataset(dataset[train_indices],labels[train_indices]), batch_size=eval_param.batch_size, shuffle=True)
+            test_loader = DataLoader(CustomDataset(dataset[test_indices],labels[test_indices]), batch_size=eval_param.batch_size, shuffle=False)
+
+            k_fold_loader_dict[split_idx][ds_suffix] = {"test": test_loader,"train" : train_loader,"test_idx": test_indices,"train_idx": train_indices}
+    #save
+    k_fold_loader_dict_path = os.path.join(eval_param.outputdir, "k_fold_loader_dict.pkl")
+    with open(k_fold_loader_dict_path, "wb") as fbout:
+        pickle.dump(k_fold_loader_dict, fbout)
+
+    # Example data (replace with your dataset)
+    for k_idx, datasets in k_fold_loader_dict.items():
+        for ds_suffix, dataset in datasets.items():
+            # init Model
+            model = return_mlp(**eval_param.MLP_kwargs)
+            model = model.to(device)
+            # CrossEntropyLoss with class weights for imbalanced data
+            class_counts = torch.bincount(labels[dataset["train_idx"]])
+            class_weights = 1.0 / class_counts.float()
+            class_weights = class_weights / class_weights.sum()
+            criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+            optimizer = optim.Adam(model.parameters(), lr=eval_param.learning_rate)
+            train_loader = dataset["train"]
+            test_loader = dataset["test"]
+            
+            for epoch in range(eval_param.num_epochs):
+                #train block
+                model.train()
+                running_loss = 0.0
+                for batch_inputs, batch_labels in train_loader:
+
+                    batch_inputs, batch_labels = batch_inputs.to(device), batch_labels.to(device)
+                    optimizer.zero_grad()
+                    batch_outputs = model(batch_inputs)
+                    batch_loss = criterion(batch_outputs, batch_labels)
+
+                    batch_loss.backward()
+                    optimizer.step()
+                    running_loss += batch_loss.item()
+                training_loss = running_loss / len(train_loader)
+
+                #eval block
+                model.eval()
+                all_preds = []
+                all_labels = []
+                with torch.no_grad():
+                     for batch_inputs, batch_labels in test_loader:
+                        batch_inputs, batch_labels = batch_inputs.to(device), batch_labels.to(device)
+                        batch_outputs = model(batch_inputs)
+                        probabilities = F.softmax(batch_outputs, dim=1)
+                        _, preds = torch.max(probabilities, 1)
+                        all_preds.extend(preds.cpu().numpy())
+                        all_labels.extend(batch_labels.cpu().numpy())
+                
+                epoch_report = classification_report(all_labels, all_preds, output_dict=True, target_names = target_names)
+                epoch_report["training loss"] = training_loss
+                epoch_report["epoch"] = epoch
+                wandb.log({"epoch" : epoch, f"{k_idx}fold":{
+                                        ds_suffix : epoch_report
+                                        }
+                            })
+
+                #acc = accuracy_score(all_labels, all_preds)
+                #f1_weighted = f1_score(all_labels, all_preds, average="weighted")
+                #f1_macro = f1_score(all_labels, all_preds, average="macro")
+                #precision_weighted = precision_score(all_labels, all_preds, average="weighted")
+                #precision_macro = precision_score(all_labels, all_preds, average="macro")
+                #recall_weighted = recall_score(all_labels, all_preds, average="weighted")
+                #recall_macro = recall_score(all_labels, all_preds, average="macro")
+
+                # Print results
+                acc = epoch_report["accuracy"]
+                w_f1 = epoch_report["weighted avg"]["f1-score"]
+                m_f1 = epoch_report["macro avg"]["f1-score"]
+                print(f"{k_idx}k, {ds_suffix} Dataset, Epoch [{epoch + 1}/{eval_param.num_epochs}] | Tr. Loss: {training_loss:.4f}, Tst. Acc.: {acc:.4f}, Weighted F1: {w_f1:.4f}, Macro F1: {m_f1:.4f}")
+                #print(f"Training Loss: {running_loss / len(train_loader):.4f}")
+                #print(f"Validation Accuracy: {acc:.4f}")
+                #print(f"Validation Weighted F1 Score: {f1_weighted:.4f}")
+                #print(f"Validation Macro F1 Score: {f1_macro:.4f}")
+                # Class-specific metrics
+                #print("\nClass-Specific Metrics:")
+                #print(classification_report(all_labels, all_preds))

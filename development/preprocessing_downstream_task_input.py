@@ -40,7 +40,7 @@ def label_generator(spm_df, tolerance=0.2):
 
 
 # %%
-labels2classes_dict, label_counts, gene_labels_dict = label_generator(spm_df, tolerance=0.8)
+labels2classes_dict, label_counts, gene_labels_dict = label_generator(spm_df, tolerance=0)
 print(label_counts)
 n = 0
 for gene in gene_dict.keys():
@@ -49,27 +49,39 @@ for gene in gene_dict.keys():
     except:
         gene_labels_dict[gene] = 0
         n+= 1
-print(n)
 
-label_dir = os.path.join(workdir, "multi_class_80ptolerance")
+print(n)
+label_dir = os.path.join(workdir,"labels" ,"multi_class_0ptolerance")
+    
+labels = torch.zeros((len(gene_labels_dict)), dtype=torch.long)
+for gene , idx in gene_dict.items():
+        labels[idx] = gene_labels_dict[gene]
+
 
 
 # %%
 if not os.path.exists(label_dir):
     os.makedirs(label_dir)
+
 labels2classes_dict_path = os.path.join(label_dir , "labels2classes_dict.pkl")
+
 gene_labels_dict_path = os.path.join(label_dir , "gene_labels_dict.pkl")
+
 with open( labels2classes_dict_path, "wb") as fbout:
     pickle.dump(labels2classes_dict, fbout)
 
 with open( gene_labels_dict_path, "wb") as fbout:
     pickle.dump(gene_labels_dict, fbout)
+
+with open(os.path.join(label_dir, "labels.pkl"), "wb") as fbout:
+        pickle.dump(labels,fbout)
+
 # %%
 species = "taxid3702"
-datasetprefix = "ESM3B_concat_RP11_E240"
+datasetprefix = "ESM3B_concat_RP11_E500"
 ESMname = "ESM3B_node_features.pkl"
 modelname = "Runpod_model_11"
-CxNE_epoch = 240
+CxNE_epoch = 500
 
 speciesdir = f"/mnt/md2/ken/CxNE_plants_data/species_data/{species}/"
 datasetdir = os.path.join(speciesdir, "datasets", datasetprefix)
@@ -105,3 +117,17 @@ with open(os.path.join(datasetdir + f"_DS3.pkl"), "wb") as fbout:
 with open(os.path.join(datasetdir + f"_DS4.pkl"), "wb") as fbout:
     pickle.dump(concatenated_features_DS4 , fbout)
 # %%
+
+###to be incoporated
+if False:
+    #remove
+    gene_dict_path = f"/mnt/md2/ken/CxNE_plants_data/species_data/{species}/gene_dict.pkl"    
+    with open(gene_dict_path, "rb") as fbin:
+        gene_dict = pickle.load(fbin)
+    
+    labels = torch.zeros((len(gene_labels_dict)), dtype=torch.int32)
+    for gene , idx in gene_dict.items():
+        labels[idx] = gene_labels_dict[gene]
+    with open(os.path.join(labeldir, "labels.pkl"), "wb") as fbout:
+        pickle.dump(labels,fbout)
+    
