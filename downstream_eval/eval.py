@@ -156,12 +156,13 @@ if __name__ == "__main__":
     # set the wandb project where this run will be logged
     project= eval_param.project,
     name= eval_param.name ,
+    entity = eval_param.entity,
     # track hyperparameters and run metadata
     config={attr: getattr(eval_param, attr)
         for attr in dir(eval_param)
         if not attr.startswith("__") and not callable(getattr(eval_param, attr))}
     )
-    
+
     #make k_fold_dataset_dict
     k_fold_loader_dict = {}
     k_folds =  torch.chunk(torch.randperm(labels.size(0)), eval_param.k)

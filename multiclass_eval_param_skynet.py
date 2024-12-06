@@ -15,6 +15,7 @@ checkpoint_interval = 5
 #   Wandblogging
 project = "CxNE_Eval_SPM"
 name = f"{species}_{datasetprefix}_{labelname}_dpo{20}"
+entity="crowdsourced_bioinformatics"
 
 #defining output dir
 outputdir = f"/mnt/md2/ken/CxNE_plants_data/evaluate_downstream/{name}/"
