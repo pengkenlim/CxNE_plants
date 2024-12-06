@@ -176,9 +176,10 @@ if __name__ == "__main__":
 
             k_fold_loader_dict[split_idx][ds_suffix] = {"test": test_loader,"train" : train_loader,"test_idx": test_indices,"train_idx": train_indices}
     #save
-    k_fold_loader_dict_path = os.path.join(eval_param.outputdir, "k_fold_loader_dict.pkl")
-    with open(k_fold_loader_dict_path, "wb") as fbout:
-        pickle.dump(k_fold_loader_dict, fbout)
+    if False:
+        k_fold_loader_dict_path = os.path.join(eval_param.outputdir, "k_fold_loader_dict.pkl")
+        with open(k_fold_loader_dict_path, "wb") as fbout:
+            pickle.dump(k_fold_loader_dict, fbout)
 
     # Example data (replace with your dataset)
     for k_idx, datasets in k_fold_loader_dict.items():

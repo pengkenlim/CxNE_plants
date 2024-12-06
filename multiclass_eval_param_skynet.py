@@ -1,6 +1,6 @@
 species = "taxid3702"
 datasetprefix = "ESM3B_concat_RP11_E500"
-labelname = "multi_class_20ptolerance"
+labelname = "multi_class_60ptolerance"
 
 #trainng params
 batch_size =  512
@@ -14,10 +14,10 @@ checkpoint_interval = 5
 
 #   Wandblogging
 project = "CxNE_Eval_SPM"
-name = f"{species}_{datasetprefix}_{labelname}"
+name = f"{species}_{datasetprefix}_{labelname}_dpo{20}"
 
 #defining output dir
-outputdir = f"/mnt/md2/ken/CxNE_plants_data/evaluate_downstream/{species}/{species}_{datasetprefix}_{labelname}/"
+outputdir = f"/mnt/md2/ken/CxNE_plants_data/evaluate_downstream/{name}/"
 
 # k-fold 
 k= 5
@@ -30,7 +30,7 @@ MLP_kwargs = {"dims" : [2656 , 332, 42],
 "act_aft_last_layer" : False,
 "act" : "leaky_relu",
 "act_kwargs" : None,
-"dropout_rate" : 0.05}
+"dropout_rate" : 0.2}
 
     
 #defining input dir 
