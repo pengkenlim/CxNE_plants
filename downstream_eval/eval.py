@@ -161,7 +161,7 @@ if __name__ == "__main__":
         for attr in dir(eval_param)
         if not attr.startswith("__") and not callable(getattr(eval_param, attr))}
     )
-    eval_param = others.parse_parameters("/home/ken/CxNE_plants/multiclass_eval_param_skynet.py")
+    
     #make k_fold_dataset_dict
     k_fold_loader_dict = {}
     k_folds =  torch.chunk(torch.randperm(labels.size(0)), eval_param.k)
