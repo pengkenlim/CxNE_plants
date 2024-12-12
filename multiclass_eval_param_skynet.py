@@ -19,7 +19,7 @@ checkpoint_interval = 5
 
 #   Wandblogging
 project = "CxNE_Eval_SPM"
-name = f"STABLE_{species}_{datasetprefix}_{labelname}_dpo01_BS{batch_size}_LR1e-4_3L"
+name = f"Jason_{species}_{datasetprefix}_{labelname}_dpo01_BS{batch_size}_LR1e-4_3L"
 entity="crowdsourced_bioinformatics"
 
 #defining output dir
