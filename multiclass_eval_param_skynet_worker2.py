@@ -3,14 +3,11 @@ datasetprefix = "ESM3B_concat_RP11_E500"
 labelname = "multi_class_60ptolerance"
 
 #trainng params
-batch_size =  512 
-learning_rate = 1e-4 
+batch_size =  512 #[64, 128, 256, 512, 1024]
+learning_rate = 1e-4 #[1e-2, 1e-3, 1e-4, 1e-5]
 num_epochs = 500
-dropout_rate = 0.1 
-
-#seeding
-random_seed = 42
-no_fold_ds1_only = True # only DS1 and first fold
+dropout_rate = 0.2 #[0,0.1,0.2]
+#do 256 and 512 , dp = 0.2
 
 #save checkpoint,
 save_checkpoint = True
@@ -19,7 +16,7 @@ checkpoint_interval = 5
 
 #   Wandblogging
 project = "CxNE_Eval_SPM"
-name = f"STABLE_{species}_{datasetprefix}_{labelname}_dpo01_BS{batch_size}_LR1e-4_3L"
+name = f"STABLE_{species}_{datasetprefix}_{labelname}_dpo02_BS{batch_size}_LR1e-4_3L"
 entity="crowdsourced_bioinformatics"
 
 #defining output dir

@@ -22,6 +22,8 @@ import argparse
 from utils import others
 
 
+
+
 # Dataset class
 class CustomDataset(Dataset):
     def __init__(self, data, labels):
@@ -87,6 +89,10 @@ if __name__ == "__main__":
     args=parser.parse_args()
     param_path = args.param_path
     eval_param = others.parse_parameters(param_path)
+
+    #manual seed for random yet reproducible spliting of dataset. Ensures comparability between same folds from different runs.
+    torch.manual_seed(eval_param.random_seed)
+    
 
     #species = "taxid3702"
     #datasetprefix = "ESM3B_concat_RP11_E500"
@@ -181,6 +187,9 @@ if __name__ == "__main__":
         k_fold_loader_dict_path = os.path.join(eval_param.outputdir, "k_fold_loader_dict.pkl")
         with open(k_fold_loader_dict_path, "wb") as fbout:
             pickle.dump(k_fold_loader_dict, fbout)
+    if eval_param.no_fold_ds1_only:
+        temp = {0: {"DS1":k_fold_loader_dict[0]["DS1"]}}
+        k_fold_loader_dict = temp
 
     # Example data (replace with your dataset)
     for k_idx, datasets in k_fold_loader_dict.items():
