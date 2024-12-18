@@ -16,7 +16,7 @@ import pickle
 import gdown
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch_geometric.loader import ClusterData, ClusterLoader
+from torch_geometric.loader import ClusterData, ClusterLoader, prefetch
 import numpy as np
 #from torch.cuda.amp import autocast
 from torch.amp import autocast, GradScaler
@@ -237,7 +237,7 @@ if __name__ == "__main__":
                 # init Cluster-CGN
                 cluster_data = ClusterData(input_graph, num_parts  = train_param.clusterGCN_num_parts, save_dir= clustergcn_dirpaths_dict[species], keep_inter_cluster_edges =True)
                 loader= ClusterLoader(cluster_data, num_workers = train_param.num_workers, batch_size = train_param.clusterGCN_parts_perbatch, shuffle=True)
-                
+
                 # generate input_graph_node_prop
                 input_graph_node_prop ={"y": input_graph.y,
                                         "train_mask":input_graph.train_mask,
@@ -296,11 +296,12 @@ if __name__ == "__main__":
                 # start training model using species data
                 summed_MBP_train_loss, summed_MBP_val_loss , summed_MBP_test_loss= 0 , 0, 0
                 
-                for mb_idx, subgraph in enumerate(loader):
+                prefetch_loader = prefetch.PrefetchLoader(loader, device= GPU_device)
+                for mb_idx, subgraph in enumerate(prefetch_loader):
                     with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16):
                         #setup
                         batch_no = mb_idx + 1
-                        subgraph = subgraph.to(GPU_device)
+                        #subgraph = subgraph.to(GPU_device)
                         learn_rate = scheduler.get_last_lr()[-1]
                         optimizer.zero_grad()
                         
@@ -346,6 +347,7 @@ if __name__ == "__main__":
                     #clear cache
                     torch.cuda.empty_cache()
                 del loader
+                del prefetch_loader
                 del coexp_adj_mat
                 gc.collect()
 
@@ -409,11 +411,12 @@ if __name__ == "__main__":
                             next_data_future_inference = executor_inference.submit(load_input_data_for_inference, next_species)
                             
                         #run inference
+                        prefetch_loader = prefetch.PrefetchLoader(loader, device= GPU_device)
                         rearranged_out = torch.zeros(len(input_graph_node_prop["y"]), train_param.decode_kwargs["out_channels"])
                         with autocast(device_type='cuda'if train_param.mode == "GPU" else "cpu", dtype=torch.float16):
                             for i in range(train_param.inference_replicates):
-                                for batch_idx , batch in enumerate(loader):
-                                    batch = batch.to(GPU_device)
+                                for batch_idx , batch in enumerate(prefetch_loader):
+                                    #batch = batch.to(GPU_device)
                                     out = model(batch.x,  
                                     batch.edge_index, 
                                     batch.edge_weight)
@@ -483,6 +486,7 @@ if __name__ == "__main__":
                             with open(embeddings_path, "wb") as fbout:
                                 pickle.dump(infer_out, fbout)
                         del loader
+                        del prefetch_loader
                         del coexp_adj_mat
                         del input_graph_node_prop
                         gc.collect()

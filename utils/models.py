@@ -92,13 +92,22 @@ def return_GAT_convs_deprecated(dims, out_channels, batch_norm, batch_norm_aft_l
 
 def return_GAT_convs(dims, out_channels, norm_type, norm_aft_last_layer,act_aft_last_layer,act, concat, heads, act_kwargs):
     GAT_convs = nn.ModuleList()
-    for layer, in_dim in enumerate(dims):
-        if layer < len(dims) -1: #if before last layer
-            out_dim = dims[layer+1] #out_dim is the in_dim of subsequent layer
-            #add linear layer
-            GAT_convs.append(GATv2Conv(in_dim, out_dim, concat= concat, heads = heads, edge_dim =1))
-        else: # last layer
-            GAT_convs.append(GATv2Conv(in_dim, out_channels, concat= concat, heads = heads, edge_dim =1))
+    if concat:
+        for layer, in_dim in enumerate(dims):
+            if layer < len(dims) -1: #if before last layer
+                out_dim = dims[layer+1] #out_dim is the in_dim of subsequent layer
+                #add linear layer
+                GAT_convs.append(GATv2Conv(in_dim, int(out_dim/heads), concat= concat, heads = heads, edge_dim =1))
+            else: # last layer
+                GAT_convs.append(GATv2Conv(in_dim, int(out_channels/heads), concat= concat, heads = heads, edge_dim =1))
+    else:
+        for layer, in_dim in enumerate(dims):
+            if layer < len(dims) -1: #if before last layer
+                out_dim = dims[layer+1] #out_dim is the in_dim of subsequent layer
+                #add linear layer
+                GAT_convs.append(GATv2Conv(in_dim, out_dim, concat= concat, heads = heads, edge_dim =1))
+            else: # last layer
+                GAT_convs.append(GATv2Conv(in_dim, out_channels, concat= concat, heads = heads, edge_dim =1))
     return GAT_convs
 
 class CxNE_deprecated(nn.Module):

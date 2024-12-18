@@ -4,9 +4,10 @@
 project = "CxNE_Viridiplantae"
 name = "Runpod_model_13"
 
-#   System paramters
+#   System parameters
 num_workers = 16    #--------------------------------------------------------- No. workers for some CPU tasks
 mode = 'GPU'        #---------------------------------------------------------Options = ['CPU', 'GPU']
+
 
 #   dir/file paths
 input_graph_filename = "adj_mat_zscore_20percent_ESM3B_data.pkl"

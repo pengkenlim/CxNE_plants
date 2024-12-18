@@ -40,6 +40,16 @@ plt.xlabel("Embedding Dimensions")
 plt.ylabel("Neighbor Features")
 plt.show()
 # %%
+def standardize_along_axis(array, axis=0):
+    mean = np.mean(array, axis=axis, keepdims=True)  # Compute mean along the axis
+    std = np.std(array, axis=axis, keepdims=True)   # Compute std deviation along the axis
+    
+    # Avoid division by zero
+    #std[std == 0] = 1
+    
+    standardized_array = (array - mean) / std
+    return standardized_array
+# %%
 import pickle
 path_to_embeddings = "/mnt/md2/ken/CxNE_plants_data/multiplex_models/Runpod_model_11/Embeddings/taxid3702/Epoch500_emb.pkl"
 path_to_Adj = "/mnt/md2/ken/CxNE_plants_data/species_data/taxid3702/adj_mat_zscore.pkl"
@@ -53,8 +63,14 @@ with open(path_to_embeddings, "rb") as fbin:
 Adj = Adj.astype("float32")
 emb = emb.numpy()
 # %%
+std_emb = standardize_along_axis(emb, axis=0)
+print(np.mean(std_emb, axis = 0))
+
+
+# %%
 pls = PLSRegression(n_components=96)
-pls.fit(Adj, emb)
+#pls.fit(Adj, emb)
+pls.fit(Adj, std_emb)
 # %%
 coefficients = pls.coef_ 
 # %%
@@ -62,12 +78,12 @@ coefficients = pls.coef_
 import os
 pls_dir = "/mnt/md2/ken/CxNE_plants_data/multiplex_models/Runpod_model_11/PLSR/taxid3702/Epoch500_emb/"
 #os.makedirs(pls_dir)
-pls_path = os.path.join(pls_dir, "pls.pkl")
+pls_path = os.path.join(pls_dir, "pls_STD.pkl")
 # %%
 with open(pls_path, "wb") as fbout:
     pickle.dump(pls, fbout)
 # %%
-coefficients_path = os.path.join(pls_dir, "coefficients.pkl")
+coefficients_path = os.path.join(pls_dir, "coefficients_STD.pkl")
 with open(coefficients_path, "wb") as fbout:
     pickle.dump(coefficients, fbout)
 # %%
@@ -80,7 +96,7 @@ import pandas as pd
 gene_dict_flipped = {value:key for key, value in gene_dict.items()}
 coef_df = pd.DataFrame(coefficients, columns = [gene_dict_flipped[i] for i in range(len(gene_dict_flipped)) ])
 # %%
-coef_df.to_csv(os.path.join(pls_dir, "coef_df.tsv"),sep = "\t")
+coef_df.to_csv(os.path.join(pls_dir, "coef_df_STD.tsv"),sep = "\t")
 # %%
 # function definitions
 import gseapy as gp
@@ -126,22 +142,28 @@ def get_signature(df, emb_idx):
 obo_path = os.path.join(pls_dir, "go.obo")
 GAF_path = os.path.join(pls_dir, "tair.gaf" )
 annot_dict = get_gene_sets(obo_path, GAF_path, category = "P", GeneID_col = 1)
+coef_df= pd.read_csv(os.path.join(pls_dir, "coef_df_STD.tsv"),sep = "\t", index_col=0)
 # %%
-signature = get_signature(coef_df,4)
+dim_dict = {}
+for dim in range(96):
+    signature = get_signature(coef_df,dim)
+    min_gene_set_size = 5
+    max_gene_set_size = 200
+    weight = 1
+    permutation_num = 100
+    pre_res = gp.prerank(rnk=signature,  gene_sets = annot_dict,
+                        threads=64, min_size = min_gene_set_size, max_size= max_gene_set_size,
+                        permutation_num=permutation_num, verbose=True, weight = weight, ascending=False)
 
-min_gene_set_size = 5
-max_gene_set_size = 200
-weight = 1
-permutation_num = 1000
-pre_res = gp.prerank(rnk=signature,  gene_sets = annot_dict,
-                     threads=64, min_size = min_gene_set_size, max_size= max_gene_set_size,
-                     permutation_num=permutation_num, verbose=True, weight = weight, ascending=False)
+    result = pre_res.res2d
 
-result = pre_res.res2d
-
-results_filtered = result[result["FDR q-val"] <= 0.05]
-results_filtered
-
+    results_filtered = result[result["FDR q-val"] <= 0.05]
+    print("DIM", dim)
+    print(results_filtered)
+    dim_dict[dim] = results_filtered
 # %%
+dim_dict_path = os.path.join( pls_dir, "dim_dict_STD.pkl")
+with open(dim_dict_path, "wb") as fbout:
+   pickle.dump(dim_dict, fbout)
 
 # %%
